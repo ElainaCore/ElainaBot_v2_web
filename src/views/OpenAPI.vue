@@ -57,6 +57,7 @@ const webhookProcessing = ref(false)
 const webhookUrl = ref('')
 const webhookInput = ref('')
 const webhookDirty = computed(() => webhookInput.value.trim() && webhookInput.value.trim() !== webhookUrl.value)
+const webhookSuggest = reactive({ available: false, url: '' })
 
 async function checkLoginStatus() {
   try { const { data } = await axios.post('/api/openapi/login-status', { user_id: 'web_user' }); if (data.success && data.logged_in) { loggedIn.value = true; loginInfo.uin = data.uin || ''; loginInfo.appId = data.appid || '' } } catch {}
@@ -157,7 +158,9 @@ function saveEvents() { if (!eventsDirty.value) return alert('没有需要保存
 
 async function fetchWebhook() {
   if (!selectedBot.value) return; webhookLoading.value = true
+  webhookSuggest.available = false; webhookSuggest.url = ''
   try { const { data } = await axios.post('/api/openapi/webhook', { user_id: 'web_user', appid: selectedBot.value }); if (data.success) { webhookUrl.value = data.data?.webhook_url || ''; webhookInput.value = webhookUrl.value } else alert(data.message || '获取回调地址失败') } catch { alert('获取回调地址失败') }
+  try { const { data } = await axios.post('/api/openapi/webhook/suggest', { user_id: 'web_user', appid: selectedBot.value }); if (data.success) { webhookSuggest.available = !!data.available; webhookSuggest.url = data.url || '' } } catch {}
   webhookLoading.value = false
 }
 function saveWebhook() { if (!webhookInput.value.trim()) return alert('请输入回调地址'); startAuthQR('webhook') }
@@ -319,12 +322,15 @@ onUnmounted(() => stopLoginPoll())
             <button class="btn btn-sm btn-primary" @click="saveWebhook" :disabled="webhookProcessing || !webhookDirty">{{ webhookProcessing ? '处理中...' : '保存更改（需扫码授权）' }}</button>
           </div>
         </div>
-        <div class="ev-tip">机器人事件回调（Webhook）地址，开放平台会把订阅的事件推送到该地址。修改需扫码授权。</div>
+        <div class="ev-tip">机器人事件回调（Webhook）地址，开放平台会把订阅的事件推送到该地址。当设置 Webhook 后无法转回 WebSocket（建议 WebSocket）。<span class="wh-warn">提交端口必须为 80、8080、443、8443，支持 http。</span></div>
         <div class="wh-form">
           <label class="wh-label">当前回调地址</label>
           <div class="wh-current">{{ webhookUrl || '（未设置）' }}</div>
           <label class="wh-label">新回调地址</label>
-          <input v-model="webhookInput" class="ctrl-input" placeholder="如 https://1.2.3.4:8080/api/102061770" @keyup.enter="saveWebhook" />
+          <div class="wh-input-row">
+            <input v-model="webhookInput" class="ctrl-input" placeholder="如 https://1.2.3.4:8080/api/102061770" @keyup.enter="saveWebhook" />
+            <button v-if="webhookSuggest.available" class="btn btn-sm btn-ghost wh-fill-btn" @click="webhookInput = webhookSuggest.url" title="填入本机回调地址">自动填入</button>
+          </div>
         </div>
       </div>
 
@@ -859,6 +865,21 @@ onUnmounted(() => stopLoginPoll())
   padding:8px 10px;
   background:var(--bg2);
   border-radius:8px
+}
+.wh-warn {
+  color:#e5484d
+}
+.wh-input-row {
+  display:flex;
+  gap:8px;
+  align-items:center
+}
+.wh-input-row .ctrl-input {
+  flex:1
+}
+.wh-fill-btn {
+  white-space:nowrap;
+  flex-shrink:0
 }
 .ev-groups {
   display:flex;
