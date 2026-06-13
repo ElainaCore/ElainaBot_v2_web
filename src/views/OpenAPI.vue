@@ -112,7 +112,8 @@ function setAuthProcessing(v) { if (authAction.value === 'events') eventsProcess
 
 async function startAuthQR(action) {
   authAction.value = action; setAuthProcessing(true); authStatus.value = 'waiting'; authQrUrl.value = ''; authQrCode.value = ''
-  try { const { data } = await axios.post('/api/openapi/whitelist/delete-qr', { user_id: 'web_user', appid: selectedBot.value }); if (!data.success || !data.qrcode) { alert(data.message || '获取授权二维码失败'); setAuthProcessing(false); return }; authQrCode.value = data.qrcode; authQrUrl.value = data.url || ''; showAuthQR.value = true; pollAuth() } catch { alert('获取授权二维码失败'); setAuthProcessing(false) }
+  const qrApi = action === 'events' ? '/api/openapi/events/auth-qr' : '/api/openapi/whitelist/delete-qr'
+  try { const { data } = await axios.post(qrApi, { user_id: 'web_user', appid: selectedBot.value }); if (!data.success || !data.qrcode) { alert(data.message || '获取授权二维码失败'); setAuthProcessing(false); return }; authQrCode.value = data.qrcode; authQrUrl.value = data.url || ''; showAuthQR.value = true; pollAuth() } catch { alert('获取授权二维码失败'); setAuthProcessing(false) }
 }
 
 function pollAuth() {
