@@ -18,7 +18,7 @@ const loginStatusClass = computed(() => ({ 'status-ok': loginStatus.value === 'l
 const bots = ref([])
 const selectedBot = ref('')
 const botsLoading = ref(false)
-const TABS = [{ key: 'data', label: '数据总览' }, { key: 'notifications', label: '平台通知' }, { key: 'whitelist', label: 'IP 白名单' }]
+const TABS = [{ key: 'data', label: '数据总览' }, { key: 'notifications', label: '平台通知' }, { key: 'whitelist', label: 'IP 白名单' }, { key: 'events', label: '事件订阅' }]
 const tab = ref('data')
 
 const dataLoading = ref(false)
@@ -41,6 +41,16 @@ const authStatus = ref('waiting')
 const authAction = ref('')
 const deleteIp = ref('')
 let authTimer = null
+
+const eventsLoading = ref(false)
+const eventsProcessing = ref(false)
+const events = ref([])
+const groupedEvents = computed(() => {
+  const groups = {}
+  for (const e of events.value) { (groups[e.type] ||= []).push(e) }
+  return Object.entries(groups).map(([type, list]) => ({ type, list }))
+})
+const eventsDirty = computed(() => events.value.some(e => !!e.checked !== !!e.is_subscribed))
 
 async function checkLoginStatus() {
   try { const { data } = await axios.post('/api/openapi/login-status', { user_id: 'web_user' }); if (data.success && data.logged_in) { loggedIn.value = true; loginInfo.uin = data.uin || ''; loginInfo.appId = data.appid || '' } } catch {}
@@ -75,7 +85,7 @@ async function fetchBots() {
   botsLoading.value = false
 }
 
-function switchTab(k) { tab.value = k; if (k === 'data' && !dayData.value.length) fetchData(); if (k === 'notifications' && !notifications.value.length) fetchNotifications(); if (k === 'whitelist' && !whitelist.value.length) fetchWhitelist() }
+function switchTab(k) { tab.value = k; if (k === 'data' && !dayData.value.length) fetchData(); if (k === 'notifications' && !notifications.value.length) fetchNotifications(); if (k === 'whitelist' && !whitelist.value.length) fetchWhitelist(); if (k === 'events' && !events.value.length) fetchEvents() }
 
 async function fetchData() {
   if (!selectedBot.value) return; dataLoading.value = true
@@ -98,9 +108,11 @@ async function fetchWhitelist() {
 function addPendingIp() { const ip = newIp.value.trim(); if (!ip) return; if (!/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(ip)) return alert('IP 格式无效'); if (pendingIps.value.includes(ip)) return alert('已在列表中'); pendingIps.value.push(ip); newIp.value = '' }
 function confirmDeleteIp(ip) { if (confirm(`确定删除 IP: ${ip}？`)) { deleteIp.value = ip; startAuthQR('del') } }
 
+function setAuthProcessing(v) { if (authAction.value === 'events') eventsProcessing.value = v; else wlProcessing.value = v }
+
 async function startAuthQR(action) {
-  authAction.value = action; wlProcessing.value = true; authStatus.value = 'waiting'; authQrUrl.value = ''; authQrCode.value = ''
-  try { const { data } = await axios.post('/api/openapi/whitelist/delete-qr', { user_id: 'web_user', appid: selectedBot.value }); if (!data.success || !data.qrcode) { alert(data.message || '获取授权二维码失败'); wlProcessing.value = false; return }; authQrCode.value = data.qrcode; authQrUrl.value = data.url || ''; showAuthQR.value = true; pollAuth() } catch { alert('获取授权二维码失败'); wlProcessing.value = false }
+  authAction.value = action; setAuthProcessing(true); authStatus.value = 'waiting'; authQrUrl.value = ''; authQrCode.value = ''
+  try { const { data } = await axios.post('/api/openapi/whitelist/delete-qr', { user_id: 'web_user', appid: selectedBot.value }); if (!data.success || !data.qrcode) { alert(data.message || '获取授权二维码失败'); setAuthProcessing(false); return }; authQrCode.value = data.qrcode; authQrUrl.value = data.url || ''; showAuthQR.value = true; pollAuth() } catch { alert('获取授权二维码失败'); setAuthProcessing(false) }
 }
 
 function pollAuth() {
@@ -108,19 +120,32 @@ function pollAuth() {
   authTimer = setInterval(async () => { try { const { data } = await axios.post('/api/openapi/whitelist/check-delete-auth', { user_id: 'web_user', appid: selectedBot.value, qrcode: authQrCode.value }); if (data.success && data.authorized) { authStatus.value = 'authorized'; stopAuthPoll(); await executeAuth() } } catch {} }, 3000)
 }
 function stopAuthPoll() { if (authTimer) { clearInterval(authTimer); authTimer = null } }
-function closeAuthQR() { stopAuthPoll(); showAuthQR.value = false; wlProcessing.value = false }
+function closeAuthQR() { stopAuthPoll(); showAuthQR.value = false; setAuthProcessing(false) }
 
 async function executeAuth() {
   try {
-    let res
-    if (authAction.value === 'del') res = await axios.post('/api/openapi/whitelist/execute-delete', { user_id: 'web_user', appid: selectedBot.value, ip: deleteIp.value, qrcode: authQrCode.value })
-    else { const all = [...whitelist.value.map(i => typeof i === 'string' ? i : i.ip), ...pendingIps.value]; res = await axios.post('/api/openapi/whitelist/batch-add', { user_id: 'web_user', appid: selectedBot.value, ip_list: all, qrcode: authQrCode.value }) }
-    const { data } = res; if (data.success) { alert(authAction.value === 'add' ? '添加成功！' : 'IP 删除成功！'); pendingIps.value = []; fetchWhitelist() } else alert(data.message || '操作失败')
+    if (authAction.value === 'events') {
+      const event_ids = events.value.filter(e => e.checked).map(e => e.id)
+      const { data } = await axios.post('/api/openapi/events/modify', { user_id: 'web_user', appid: selectedBot.value, event_ids, qrcode: authQrCode.value })
+      if (data.success) { alert('订阅更新成功！'); fetchEvents() } else alert(data.message || '操作失败')
+    } else {
+      let res
+      if (authAction.value === 'del') res = await axios.post('/api/openapi/whitelist/execute-delete', { user_id: 'web_user', appid: selectedBot.value, ip: deleteIp.value, qrcode: authQrCode.value })
+      else { const all = [...whitelist.value.map(i => typeof i === 'string' ? i : i.ip), ...pendingIps.value]; res = await axios.post('/api/openapi/whitelist/batch-add', { user_id: 'web_user', appid: selectedBot.value, ip_list: all, qrcode: authQrCode.value }) }
+      const { data } = res; if (data.success) { alert(authAction.value === 'add' ? '添加成功！' : 'IP 删除成功！'); pendingIps.value = []; fetchWhitelist() } else alert(data.message || '操作失败')
+    }
   } catch { alert('操作失败') }
-  showAuthQR.value = false; wlProcessing.value = false
+  showAuthQR.value = false; setAuthProcessing(false)
 }
 
-watch(selectedBot, v => { if (v) { dayData.value = []; notifications.value = []; whitelist.value = []; tab.value === 'data' ? fetchData() : tab.value === 'notifications' ? fetchNotifications() : tab.value === 'whitelist' && fetchWhitelist() } })
+async function fetchEvents() {
+  if (!selectedBot.value) return; eventsLoading.value = true
+  try { const { data } = await axios.post('/api/openapi/events', { user_id: 'web_user', appid: selectedBot.value }); if (data.success) events.value = (data.data?.events || []).map(e => ({ ...e, checked: !!e.is_subscribed })); else alert(data.message || '获取事件列表失败') } catch { alert('获取事件列表失败') }
+  eventsLoading.value = false
+}
+function saveEvents() { if (!eventsDirty.value) return alert('没有需要保存的更改'); startAuthQR('events') }
+
+watch(selectedBot, v => { if (v) { dayData.value = []; notifications.value = []; whitelist.value = []; events.value = []; tab.value === 'data' ? fetchData() : tab.value === 'notifications' ? fetchNotifications() : tab.value === 'whitelist' ? fetchWhitelist() : tab.value === 'events' && fetchEvents() } })
 onMounted(async () => { await checkLoginStatus(); if (loggedIn.value) fetchBots() })
 onUnmounted(() => stopLoginPoll())
 </script>
@@ -239,6 +264,33 @@ onUnmounted(() => stopLoginPoll())
           </div>
         </div>
         <div v-else-if="!wlLoading" class="empty-hint">暂无白名单 IP</div>
+      </div>
+
+      <!-- Events panel -->
+      <div v-if="tab === 'events' && selectedBot" class="panel">
+        <div class="panel-header">
+          <h3>事件订阅</h3>
+          <div class="panel-actions">
+            <button class="btn btn-sm btn-ghost" @click="fetchEvents" :disabled="eventsLoading">{{ eventsLoading ? '加载中...' : '刷新' }}</button>
+            <button class="btn btn-sm btn-primary" @click="saveEvents" :disabled="eventsProcessing || !eventsDirty">{{ eventsProcessing ? '处理中...' : '保存更改（需扫码授权）' }}</button>
+          </div>
+        </div>
+        <div class="ev-tip">勾选要订阅的事件，取消勾选即代表退订。其中 <b>群消息事件 (全量)</b> 为平台默认不展示的全量群消息事件。</div>
+        <div v-if="events.length" class="ev-groups">
+          <div v-for="g in groupedEvents" :key="g.type" class="ev-group">
+            <div class="ev-group-title">{{ g.type }}</div>
+            <div class="ev-list">
+              <label v-for="e in g.list" :key="e.id" :class="['ev-item', { full: e.id === 'GROUP_MESSAGE_CREATE', changed: !!e.checked !== !!e.is_subscribed }]">
+                <input type="checkbox" v-model="e.checked" />
+                <span class="ev-info">
+                  <span class="ev-name">{{ e.name }}</span>
+                  <span class="ev-id">{{ e.id }}</span>
+                </span>
+              </label>
+            </div>
+          </div>
+        </div>
+        <div v-else-if="!eventsLoading" class="empty-hint">暂无事件</div>
       </div>
 
       <!-- Auth QR modal -->
@@ -744,6 +796,77 @@ onUnmounted(() => stopLoginPoll())
 }
 .chip-remove:hover {
   color:#fff
+}
+.ev-tip {
+  font-size:12px;
+  color:var(--text3);
+  line-height:1.6;
+  margin-bottom:14px
+}
+.ev-tip b {
+  color:var(--accent)
+}
+.ev-groups {
+  display:flex;
+  flex-direction:column;
+  gap:18px
+}
+.ev-group-title {
+  font-size:13px;
+  font-weight:700;
+  color:var(--text2);
+  margin-bottom:8px
+}
+.ev-list {
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(240px,1fr));
+  gap:8px
+}
+.ev-item {
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:10px 12px;
+  background:var(--bg3);
+  border-radius:var(--radius-sm);
+  border:1px solid var(--border);
+  cursor:pointer
+}
+.ev-item:hover {
+  border-color:var(--accent)
+}
+.ev-item.full {
+  border-color:var(--accent);
+  background:color-mix(in srgb, var(--accent) 8%, var(--bg3))
+}
+.ev-item.changed {
+  box-shadow:0 0 0 1px var(--accent) inset
+}
+.ev-item input {
+  width:16px;
+  height:16px;
+  flex-shrink:0;
+  accent-color:var(--accent);
+  cursor:pointer
+}
+.ev-info {
+  display:flex;
+  flex-direction:column;
+  gap:2px;
+  min-width:0
+}
+.ev-name {
+  font-size:13px;
+  color:var(--text);
+  font-weight:500
+}
+.ev-id {
+  font-size:11px;
+  color:var(--text3);
+  font-family:monospace;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap
 }
 .not-logged-in {
   text-align:center;
