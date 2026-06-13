@@ -58,6 +58,7 @@ const webhookUrl = ref('')
 const webhookInput = ref('')
 const webhookDirty = computed(() => webhookInput.value.trim() && webhookInput.value.trim() !== webhookUrl.value)
 const webhookSuggest = reactive({ available: false, url: '' })
+const webhookCheck = reactive({ checking: false, ok: null, msg: '' })
 
 async function checkLoginStatus() {
   try { const { data } = await axios.post('/api/openapi/login-status', { user_id: 'web_user' }); if (data.success && data.logged_in) { loggedIn.value = true; loginInfo.uin = data.uin || ''; loginInfo.appId = data.appid || '' } } catch {}
@@ -158,12 +159,18 @@ function saveEvents() { if (!eventsDirty.value) return alert('没有需要保存
 
 async function fetchWebhook() {
   if (!selectedBot.value) return; webhookLoading.value = true
-  webhookSuggest.available = false; webhookSuggest.url = ''
+  webhookSuggest.available = false; webhookSuggest.url = ''; webhookCheck.ok = null; webhookCheck.msg = ''
   try { const { data } = await axios.post('/api/openapi/webhook', { user_id: 'web_user', appid: selectedBot.value }); if (data.success) { webhookUrl.value = data.data?.webhook_url || ''; webhookInput.value = webhookUrl.value } else alert(data.message || '获取回调地址失败') } catch { alert('获取回调地址失败') }
   try { const { data } = await axios.post('/api/openapi/webhook/suggest', { user_id: 'web_user', appid: selectedBot.value }); if (data.success) { webhookSuggest.available = !!data.available; webhookSuggest.url = data.url || '' } } catch {}
   webhookLoading.value = false
 }
 function saveWebhook() { if (!webhookInput.value.trim()) return alert('请输入回调地址'); startAuthQR('webhook') }
+async function checkWebhook() {
+  const url = webhookInput.value.trim(); if (!url) return alert('请输入回调地址')
+  webhookCheck.checking = true; webhookCheck.ok = null; webhookCheck.msg = ''
+  try { const { data } = await axios.post('/api/openapi/webhook/check', { user_id: 'web_user', appid: selectedBot.value, webhook_url: url }); if (data.success) { webhookCheck.ok = !!data.valid; webhookCheck.msg = data.message || (data.valid ? '地址校验通过' : '地址校验未通过') } else { webhookCheck.ok = false; webhookCheck.msg = data.message || '校验失败' } } catch { webhookCheck.ok = false; webhookCheck.msg = '校验请求失败' }
+  webhookCheck.checking = false
+}
 
 watch(selectedBot, v => { if (v) { dayData.value = []; notifications.value = []; whitelist.value = []; events.value = []; webhookUrl.value = ''; webhookInput.value = ''; tab.value === 'data' ? fetchData() : tab.value === 'notifications' ? fetchNotifications() : tab.value === 'whitelist' ? fetchWhitelist() : tab.value === 'events' ? fetchEvents() : tab.value === 'webhook' && fetchWebhook() } })
 onMounted(async () => { await checkLoginStatus(); if (loggedIn.value) fetchBots() })
@@ -319,6 +326,7 @@ onUnmounted(() => stopLoginPoll())
           <h3>回调配置</h3>
           <div class="panel-actions">
             <button class="btn btn-sm btn-ghost" @click="fetchWebhook" :disabled="webhookLoading">{{ webhookLoading ? '加载中...' : '刷新' }}</button>
+            <button class="btn btn-sm btn-ghost" @click="checkWebhook" :disabled="webhookCheck.checking || !webhookInput.trim()">{{ webhookCheck.checking ? '校验中...' : '校验地址' }}</button>
             <button class="btn btn-sm btn-primary" @click="saveWebhook" :disabled="webhookProcessing || !webhookDirty">{{ webhookProcessing ? '处理中...' : '保存更改（需扫码授权）' }}</button>
           </div>
         </div>
@@ -331,6 +339,7 @@ onUnmounted(() => stopLoginPoll())
             <input v-model="webhookInput" class="ctrl-input" placeholder="如 https://1.2.3.4:8080/api/102061770" @keyup.enter="saveWebhook" />
             <button v-if="webhookSuggest.available" class="btn btn-sm btn-ghost wh-fill-btn" @click="webhookInput = webhookSuggest.url" title="填入本机回调地址">自动填入</button>
           </div>
+          <div v-if="webhookCheck.msg" :class="['wh-check', webhookCheck.ok ? 'wh-check-ok' : 'wh-check-fail']">{{ webhookCheck.ok ? '✓ ' : '✗ ' }}{{ webhookCheck.msg }}</div>
         </div>
       </div>
 
@@ -880,6 +889,16 @@ onUnmounted(() => stopLoginPoll())
 .wh-fill-btn {
   white-space:nowrap;
   flex-shrink:0
+}
+.wh-check {
+  font-size:13px;
+  margin-top:4px
+}
+.wh-check-ok {
+  color:#46a758
+}
+.wh-check-fail {
+  color:#e5484d
 }
 .ev-groups {
   display:flex;
