@@ -415,6 +415,7 @@ onUnmounted(() => stopLoginPoll())
   gap:8px
 }
 .btn {
+  box-sizing:border-box;
   padding:8px 18px;
   border-radius:var(--radius-sm);
   border:none;
