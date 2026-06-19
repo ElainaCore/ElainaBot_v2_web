@@ -47,6 +47,18 @@ const detailLoading = ref(false)
 const detailData = ref({})
 const detailSuccess = computed(() => detailData.value.success === true)
 const baseURL = axios.defaults.baseURL || ''
+const togglingBot = ref('')
+
+async function handleToggleBot(bot, enabled) {
+  togglingBot.value = bot.appid
+  const ok = await app.toggleBot(bot.appid, enabled)
+  togglingBot.value = ''
+  if (ok) {
+    window.$message?.success(enabled ? '机器人已启用' : '机器人已关闭')
+  } else {
+    window.$message?.error('操作失败')
+  }
+}
 
 function navigate(name) {
   router.push({ name })
@@ -249,18 +261,22 @@ onUnmounted(() => {
                 <span class="bot-appid">{{ app.bots.length }} 个</span>
               </div>
               <div v-for="bot in app.bots" :key="bot.appid"
-                :class="['bot-switch-item', { active: bot.appid === app.currentBotId }]"
-                @click="app.switchBot(bot.appid)">
-                <img v-if="bot.avatar" :src="bot.avatar" class="bot-avatar-tiny" />
-                <span v-else class="bot-avatar-letter">{{ (bot.name || bot.appid).charAt(0) }}</span>
-                <span :class="['ws-dot', bot.connected ? 'online' : bot.connection_type === 'Webhook' ? 'waiting' : 'offline']" />
+                :class="['bot-switch-item', { active: bot.appid === app.currentBotId, disabled: bot.enabled === false }]"
+                @click="bot.enabled !== false && app.switchBot(bot.appid)">
+                <img v-if="bot.avatar" :src="bot.avatar" class="bot-avatar-tiny" :style="bot.enabled === false ? 'opacity:0.4' : ''" />
+                <span v-else class="bot-avatar-letter" :style="bot.enabled === false ? 'opacity:0.4' : ''">{{ (bot.name || bot.appid).charAt(0) }}</span>
+                <span v-if="bot.enabled !== false" :class="['ws-dot', bot.connected ? 'online' : bot.connection_type === 'Webhook' ? 'waiting' : 'offline']" />
+                <span v-else class="ws-dot offline" />
                 <span class="bot-info-col">
-                  <span class="bot-name">{{ bot.name || bot.appid }}</span>
+                  <span class="bot-name" :style="bot.enabled === false ? 'opacity:0.5' : ''">{{ bot.name || bot.appid }}</span>
                   <span class="bot-appid">{{ bot.appid }}</span>
                 </span>
-                <n-tag :bordered="false" size="tiny" :type="bot.connection_type === 'Webhook' ? 'info' : 'success'" style="font-size:10px;flex-shrink:0">
+                <n-tag v-if="bot.enabled !== false" :bordered="false" size="tiny" :type="bot.connection_type === 'Webhook' ? 'info' : 'success'" style="font-size:10px;flex-shrink:0">
                   {{ bot.connection_type === 'Webhook' ? 'WH' : 'WS' }}
                 </n-tag>
+                <n-tag v-else :bordered="false" size="tiny" type="warning" style="font-size:10px;flex-shrink:0">已关闭</n-tag>
+                <n-switch size="small" :value="bot.enabled !== false" :loading="togglingBot === bot.appid"
+                  @click.stop @update:value="v => handleToggleBot(bot, v)" />
                 <n-button quaternary circle size="tiny" @click.stop="fetchBotDetail(bot)" title="详情" style="flex-shrink:0">
                   <template #icon><SvgIcon name="information-circle" :size="14" /></template>
                 </n-button>
@@ -269,15 +285,25 @@ onUnmounted(() => {
           </n-popover>
 
           <!-- Single bot display -->
-          <div v-else-if="app.currentBot" class="bot-selector">
-            <img v-if="app.currentBot.avatar" :src="app.currentBot.avatar" class="bot-avatar-tiny" />
-            <span v-else class="bot-avatar-letter">{{ (app.currentBot.name || '?').charAt(0) }}</span>
-            <span :class="['ws-dot', app.currentBot.connected ? 'online' : app.currentBot.connection_type === 'Webhook' ? 'waiting' : 'offline']" />
-            <span class="bot-name">{{ app.currentBot.name || '未知' }}</span>
-            <n-tag :bordered="false" size="tiny" :type="app.currentBot.connection_type === 'Webhook' ? 'info' : 'success'" style="font-size:10px">
-              {{ app.currentBot.connection_type === 'Webhook' ? 'WH' : 'WS' }}
-            </n-tag>
-            <n-button quaternary circle size="tiny" @click="fetchBotDetail(app.currentBot)" title="详情">
+          <div v-else-if="app.bots.length === 1" class="bot-selector">
+            <template v-if="app.bots[0].enabled !== false">
+              <img v-if="app.bots[0].avatar" :src="app.bots[0].avatar" class="bot-avatar-tiny" />
+              <span v-else class="bot-avatar-letter">{{ (app.bots[0].name || '?').charAt(0) }}</span>
+              <span :class="['ws-dot', app.bots[0].connected ? 'online' : app.bots[0].connection_type === 'Webhook' ? 'waiting' : 'offline']" />
+              <span class="bot-name">{{ app.bots[0].name || '未知' }}</span>
+              <n-tag :bordered="false" size="tiny" :type="app.bots[0].connection_type === 'Webhook' ? 'info' : 'success'" style="font-size:10px">
+                {{ app.bots[0].connection_type === 'Webhook' ? 'WH' : 'WS' }}
+              </n-tag>
+            </template>
+            <template v-else>
+              <span class="bot-avatar-letter" style="opacity:0.4">{{ (app.bots[0].name || '?').charAt(0) }}</span>
+              <span class="ws-dot offline" />
+              <span class="bot-name" style="opacity:0.5">{{ app.bots[0].name || '未知' }}</span>
+              <n-tag :bordered="false" size="tiny" type="warning" style="font-size:10px">已关闭</n-tag>
+            </template>
+            <n-switch size="small" :value="app.bots[0].enabled !== false" :loading="togglingBot === app.bots[0].appid"
+              @update:value="v => handleToggleBot(app.bots[0], v)" style="margin-left:4px" />
+            <n-button quaternary circle size="tiny" @click="fetchBotDetail(app.bots[0])" title="详情">
               <template #icon><SvgIcon name="information-circle" :size="14" /></template>
             </n-button>
           </div>
@@ -363,12 +389,17 @@ onUnmounted(() => {
           </div>
 
           <n-descriptions :column="2" label-placement="left" size="small" class="bd-info">
+            <n-descriptions-item label="机器人开关">
+              <n-switch size="small" :value="detailBot.enabled !== false" :loading="togglingBot === detailBot.appid"
+                @update:value="v => handleToggleBot(detailBot, v)" />
+            </n-descriptions-item>
             <n-descriptions-item label="状态">
-              <n-tag :type="detailBot.connected ? 'success' : detailBot.connection_type === 'Webhook' ? 'info' : 'error'" size="small">
+              <n-tag v-if="detailBot.enabled === false" type="warning" size="small">已关闭</n-tag>
+              <n-tag v-else :type="detailBot.connected ? 'success' : detailBot.connection_type === 'Webhook' ? 'info' : 'error'" size="small">
                 {{ detailBot.connected ? '已连接' : detailBot.connection_type === 'Webhook' ? '等待接收中' : '未连接' }}
               </n-tag>
             </n-descriptions-item>
-            <n-descriptions-item label="连接方式">{{ detailBot.connection_type || 'WebSocket' }}</n-descriptions-item>
+            <n-descriptions-item label="连接方式">{{ detailBot.enabled === false ? '-' : (detailBot.connection_type || 'WebSocket') }}</n-descriptions-item>
             <n-descriptions-item v-if="detailData.webhook_url" label="Webhook 回调配置地址" :span="2">
               <div style="display:flex;align-items:center;gap:6px">
                 <n-text code style="font-size:12px;word-break:break-all">{{ webhookDisplayUrl }}</n-text>

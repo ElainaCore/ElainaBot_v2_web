@@ -42,9 +42,19 @@ export const useAppStore = defineStore('app', () => {
     } catch {}
   }
 
+  async function toggleBot(appid, enabled) {
+    try {
+      await axios.post('/api/bots/toggle', { appid, enabled })
+      await fetchBots()
+      return true
+    } catch {
+      return false
+    }
+  }
+
   return {
     bots, currentBotId, currentBot, isAllBots,
     systemInfo, sidebarCollapsed, webPages,
-    fetchBots, switchBot, fetchSystemInfo, fetchWebPages,
+    fetchBots, switchBot, fetchSystemInfo, fetchWebPages, toggleBot,
   }
 })
