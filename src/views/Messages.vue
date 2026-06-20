@@ -52,7 +52,16 @@ const mediaTypeOptions = [
   { value: '4', label: '文件' },
 ]
 
-const apiChatType = computed(() => chatType.value === 'full_access' ? 'group' : chatType.value)
+const apiChatType = computed(() => (chatType.value === 'full_access' || chatType.value === 'remark') ? 'group' : chatType.value)
+const groupRoles = ref({})
+const remarkInput = ref('')
+const remarkQqInput = ref('')
+const remarkEditing = ref(null)
+const remarkModalVisible = ref(false)
+const addRemarkModalVisible = ref(false)
+const addRemarkOpenid = ref('')
+const addRemarkName = ref('')
+const addRemarkQq = ref('')
 const placeholder = computed(() => msgType.value === 'markdown' ? '输入 Markdown 内容... (Ctrl+Enter 发送)' : msgType.value === 'media' ? '输入资源 URL... (Ctrl+Enter 发送)' : '输入消息内容... (Ctrl+Enter 发送)')
 const quotedPreview = computed(() => quotedMsg.value ? buildQuotePreview(quotedMsg.value) : '')
 const mobileMsgTypeLabel = computed(() => msgTypeOptions.find(o => o.value === msgType.value)?.label || 'MD')
@@ -67,6 +76,7 @@ function selectMobileMediaType(value) { mediaFileType.value = value; closeMobile
 function avatarUrl(appid, uid) { return `https://q.qlogo.cn/qqapp/${appid}/${uid}/0` }
 function getBotAvatar(appid) { const bot = app.bots.find(b => b.appid === appid); return bot?.avatar || '' }
 function qqAvatar(qq) { return `http://q1.qlogo.cn/g?b=qq&nk=${qq}&s=100` }
+function groupQqAvatar(qq) { return `https://p.qlogo.cn/gh/${qq}/${qq}/100/` }
 function openUrl(u) { const a = document.createElement('a'); a.href = u; a.target = '_blank'; a.rel = 'noreferrer noopener'; a.click() }
 const lightboxSrc = ref('')
 function previewImg(src) { lightboxSrc.value = src }
@@ -227,6 +237,78 @@ async function fetchChats() {
     total.value = res.data?.data?.total || chats.value.length
   } catch { if (!_unmounted) { chats.value = []; total.value = 0 } }
 }
+
+function roleLabel(uid) {
+  const r = groupRoles.value[uid]
+  if (r === '2') return '群主'
+  if (r === '3') return '管理'
+  if (r === '4') return '群员'
+  return ''
+}
+function roleClass(uid) {
+  const r = groupRoles.value[uid]
+  if (r === '2') return 'role-owner'
+  if (r === '3') return 'role-admin'
+  return 'role-member'
+}
+
+const _rolesCache = {}
+const _ROLES_CACHE_TTL = 120000
+async function fetchGroupRoles(groupId) {
+  if (!groupId) { groupRoles.value = {}; return }
+  const cached = _rolesCache[groupId]
+  if (cached && Date.now() - cached.ts < _ROLES_CACHE_TTL) { groupRoles.value = cached.data; return }
+  try {
+    const res = await axios.post('/api/message/group-roles', { group_id: groupId })
+    const data = res.data?.data || {}
+    _rolesCache[groupId] = { data, ts: Date.now() }
+    groupRoles.value = data
+  } catch { groupRoles.value = {} }
+}
+
+async function setRemark() {
+  if (!remarkEditing.value) return
+  try {
+    await axios.post('/api/message/remarks', { group_id: remarkEditing.value, remark: remarkInput.value.trim(), group_qq: remarkQqInput.value.trim() })
+    remarkModalVisible.value = false
+    remarkEditing.value = null
+    remarkInput.value = ''
+    remarkQqInput.value = ''
+    fetchChats()
+  } catch {}
+}
+
+function startRemark(c) {
+  remarkEditing.value = c.chat_id
+  remarkInput.value = c.remark || ''
+  remarkQqInput.value = c.group_qq || ''
+  remarkModalVisible.value = true
+}
+function cancelRemark() {
+  remarkModalVisible.value = false
+  remarkEditing.value = null
+  remarkInput.value = ''
+  remarkQqInput.value = ''
+}
+
+function openAddRemark() {
+  addRemarkOpenid.value = ''
+  addRemarkName.value = ''
+  addRemarkQq.value = ''
+  addRemarkModalVisible.value = true
+}
+async function submitAddRemark() {
+  const openid = addRemarkOpenid.value.trim()
+  if (!openid) return
+  try {
+    await axios.post('/api/message/remarks', { group_id: openid, remark: addRemarkName.value.trim(), group_qq: addRemarkQq.value.trim() })
+    addRemarkModalVisible.value = false
+    fetchChats()
+  } catch {}
+}
+function cancelAddRemark() {
+  addRemarkModalVisible.value = false
+}
 function fetchChatsDebounced() {
   if (_fetchTimer) return
   _fetchTimer = setTimeout(() => { _fetchTimer = null; fetchChats() }, 5000)
@@ -236,7 +318,7 @@ let _selectId = 0
 async function selectChat(chat) {
   const myId = ++_selectId
   current.value = chat; msgText.value = ''; sendErr.value = ''; imgFile.value = null; quotedMsg.value = null
-  hasMore.value = true; oldestDate.value = ''; loadingOlder.value = false
+  hasMore.value = true; oldestDate.value = ''; loadingOlder.value = false; groupRoles.value = {}
   if (isMobile.value) mobileView.value = 'chat'
   history.value = []
   try {
@@ -246,6 +328,7 @@ async function selectChat(chat) {
     for (const m of msgs) prepareMessage(m)
     resolveMessageReferences(msgs)
     history.value = msgs; lastMsgId.value = res.data?.data?.last_msg_id || ''
+    if (apiChatType.value === 'group') fetchGroupRoles(chat.chat_id)
     oldestDate.value = res.data?.data?.oldest_date || ''
     hasMore.value = res.data?.data?.has_more !== false
     await nextTick(); scrollBottom(); watchImgLoads()
@@ -362,7 +445,7 @@ async function sendMsg() {
   finally { sending.value = false }
 }
 
-watch(chatType, () => { current.value = null; quotedMsg.value = null; history.value = []; chats.value = []; lastMsgId.value = ''; oldestDate.value = ''; hasMore.value = true; page.value = 1; fetchChats() })
+watch(chatType, () => { current.value = null; quotedMsg.value = null; history.value = []; chats.value = []; lastMsgId.value = ''; oldestDate.value = ''; hasMore.value = true; page.value = 1; remarkEditing.value = null; groupRoles.value = {}; fetchChats() })
 watch(chatDays, () => { page.value = 1; fetchChats() })
 watch(chatSearch, () => { page.value = 1; fetchChats() })
 watch(() => app.currentBotId, () => { current.value = null; quotedMsg.value = null; history.value = []; lastMsgId.value = ''; oldestDate.value = ''; hasMore.value = true; page.value = 1; fetchChats() })
@@ -378,8 +461,10 @@ onUnmounted(() => { _unmounted = true; off('new_log', onNewLog); window.removeEv
       <div :class="['chat-list-panel', { 'mobile-hidden': isMobile && mobileView !== 'list' }]">
         <div class="panel-header">
           <span>聊天列表</span>
+          <button class="add-remark-btn" title="添加备注" @click="openAddRemark">+</button>
           <n-radio-group v-model:value="chatType" size="tiny">
-            <n-radio-button value="full_access">全量群</n-radio-button>
+            <n-radio-button value="full_access">全量</n-radio-button>
+            <n-radio-button value="remark">备注</n-radio-button>
             <n-radio-button value="group">群聊</n-radio-button>
             <n-radio-button value="user">私聊</n-radio-button>
           </n-radio-group>
@@ -394,6 +479,7 @@ onUnmounted(() => { _unmounted = true; off('new_log', onNewLog); window.removeEv
           <div v-for="c in chats" :key="c.chat_id" :class="['chat-item', { active: current?.chat_id === c.chat_id }]" @click="selectChat(c)">
             <div class="chat-avatar-wrap">
               <img v-if="chatType === 'user' && c.appid && c.chat_id" class="chat-avatar" :src="avatarUrl(c.appid, c.chat_id)" loading="lazy" @error="e => e.target.style.display='none'" />
+              <img v-else-if="c.group_qq" class="chat-avatar" :src="groupQqAvatar(c.group_qq)" loading="lazy" @error="e => e.target.style.display='none'" />
               <img v-else-if="app.isAllBots && c.appid && getBotAvatar(c.appid)" class="chat-avatar" :src="getBotAvatar(c.appid)" loading="lazy" @error="e => e.target.style.display='none'" />
               <div v-else class="chat-avatar-fallback">{{ (c.nickname || c.chat_id || '?').charAt(0) }}</div>
               <span v-if="c.is_full_access" class="chat-avatar-badge">全</span>
@@ -401,11 +487,13 @@ onUnmounted(() => { _unmounted = true; off('new_log', onNewLog); window.removeEv
             <div class="chat-info">
               <div class="chat-nick">{{ chatType === 'user' ? (c.nickname || c.chat_id) : c.chat_id }}</div>
               <div v-if="chatType === 'user' && c.nickname" class="chat-id">{{ c.chat_id }}</div>
+              <div v-if="c.remark && chatType !== 'user'" class="chat-remark-label">{{ c.remark }}</div>
               <div class="chat-preview">{{ c.last_content || '' }}</div>
             </div>
             <div class="chat-meta">
               <div class="chat-time">{{ shortTime(c.last_time) }}</div>
               <div v-if="c.msg_count" class="chat-count">{{ c.msg_count }}</div>
+              <button v-if="chatType !== 'user'" class="remark-btn" title="备注" @click.stop="startRemark(c)">✎</button>
             </div>
           </div>
           <div v-if="!chats.length" class="chat-empty">暂无聊天</div>
@@ -425,7 +513,8 @@ onUnmounted(() => { _unmounted = true; off('new_log', onNewLog); window.removeEv
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
             </button>
             <span>{{ chatType === 'user' ? (current.nickname || current.chat_id) : current.chat_id }}</span>
-            <span v-if="chatType !== 'full_access'" class="panel-header-info">
+            <span v-if="current.remark && chatType !== 'user'" class="panel-header-remark">({{ current.remark }})</span>
+            <span v-if="chatType !== 'full_access' && chatType !== 'remark'" class="panel-header-info">
               <template v-if="lastMsgId">msg_id: {{ lastMsgId.slice(0, 16) }}...</template>
               <button class="refresh-msgid-btn" @click="refreshMsgId" title="刷新消息ID">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6" /><path d="M3 12a9 9 0 0 1 15-6.7L21 8" /><path d="M3 22v-6h6" /><path d="M21 12a9 9 0 0 1-15 6.7L3 16" /></svg>
@@ -449,6 +538,7 @@ onUnmounted(() => { _unmounted = true; off('new_log', onNewLog); window.removeEv
                   {{ m.nickname }}
                   <span v-if="m.source === 'web_panel'" class="bubble-src-tag">Web</span>
                   <span v-else-if="m.source === 'onebot'" class="bubble-src-tag ob-tag">OneBot</span>
+                  <span v-if="roleLabel(m.user_id) && !m.is_self && apiChatType === 'group'" :class="['bubble-role-tag', roleClass(m.user_id)]">{{ roleLabel(m.user_id) }}</span>
                   <span v-if="m.user_id && !m.is_self" class="bubble-uid">{{ m.user_id }}</span>
                 </div>
                 <div class="bubble-row">
@@ -585,6 +675,22 @@ onUnmounted(() => { _unmounted = true; off('new_log', onNewLog); window.removeEv
       <img :src="lightboxSrc" class="lightbox-img" referrerpolicy="no-referrer" @click.stop />
       <span class="lightbox-close" @click="closeLightbox">&times;</span>
     </div>
+
+    <n-modal v-model:show="remarkModalVisible" preset="dialog" title="群备注" positive-text="保存" negative-text="取消" @positive-click="setRemark" @negative-click="cancelRemark" style="width:380px">
+      <div style="padding:8px 0">
+        <div style="margin-bottom:8px;font-size:13px;color:var(--text2)">群 OpenID: {{ remarkEditing }}</div>
+        <n-input v-model:value="remarkInput" placeholder="备注名称（留空则清除备注）" style="margin-bottom:8px" />
+        <n-input v-model:value="remarkQqInput" placeholder="群号（可选，填写后显示群头像）" @keydown.enter="setRemark(); remarkModalVisible = false" />
+      </div>
+    </n-modal>
+
+    <n-modal v-model:show="addRemarkModalVisible" preset="dialog" title="添加群备注" positive-text="保存" negative-text="取消" @positive-click="submitAddRemark" @negative-click="cancelAddRemark" style="width:380px">
+      <div style="padding:8px 0">
+        <n-input v-model:value="addRemarkOpenid" placeholder="群 OpenID" style="margin-bottom:8px" autofocus />
+        <n-input v-model:value="addRemarkName" placeholder="备注名称" style="margin-bottom:8px" />
+        <n-input v-model:value="addRemarkQq" placeholder="群号（可选，填写后显示群头像）" @keydown.enter="submitAddRemark(); addRemarkModalVisible = false" />
+      </div>
+    </n-modal>
   </div>
 </template>
 
@@ -627,7 +733,29 @@ onUnmounted(() => { _unmounted = true; off('new_log', onNewLog); window.removeEv
   font-size:14px;
   font-weight:600
 }
-.panel-header > span:first-child { margin-right:auto }
+.panel-header > span:first-child { margin-right:0 }
+.add-remark-btn {
+  background:none;
+  border:1px solid var(--border);
+  cursor:pointer;
+  color:var(--text2);
+  font-size:16px;
+  font-weight:700;
+  width:22px;
+  height:22px;
+  border-radius:4px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  transition:color .15s,background .15s;
+  margin-right:auto;
+  line-height:1;
+  padding:0
+}
+.add-remark-btn:hover {
+  color:var(--accent);
+  background:var(--bg-float)
+}
 .days-sel { font-weight:400 }
 .chat-search {
   margin:8px 10px
@@ -735,6 +863,31 @@ onUnmounted(() => { _unmounted = true; off('new_log', onNewLog); window.removeEv
   padding:1px 6px;
   margin-top:4px;
   display:inline-block
+}
+.chat-remark-label {
+  font-size:10px;
+  color:var(--accent);
+  line-height:1.3
+}
+.remark-btn {
+  background:none;
+  border:none;
+  cursor:pointer;
+  color:var(--text3);
+  font-size:12px;
+  padding:2px 4px;
+  border-radius:4px;
+  transition:color .15s,background .15s;
+  line-height:1
+}
+.remark-btn:hover {
+  color:var(--accent);
+  background:var(--bg3)
+}
+.panel-header-remark {
+  font-size:12px;
+  color:var(--accent);
+  margin-left:4px
 }
 .chat-empty {
   color:var(--text3);
@@ -889,6 +1042,26 @@ onUnmounted(() => { _unmounted = true; off('new_log', onNewLog); window.removeEv
 .ob-tag {
   background:#e3f2fd;
   color:#1565c0
+}
+.bubble-role-tag {
+  font-size:9px;
+  padding:0 4px;
+  border-radius:3px;
+  line-height:15px;
+  font-weight:600;
+  margin-left:4px
+}
+.role-owner {
+  background:#fff3e0;
+  color:#e65100
+}
+.role-admin {
+  background:#e8f5e9;
+  color:#2e7d32
+}
+.role-member {
+  background:#f5f5f5;
+  color:#757575
 }
 .bubble {
   display:block;

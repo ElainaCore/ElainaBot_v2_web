@@ -142,7 +142,7 @@ async function toggleModule(mod) {
   } catch { msg.error('模块切换失败') } finally { mod._toggling = false }
 }
 
-async function uploadPlugin(e) { const f = e.target.files?.[0]; e.target.value = ''; if (!f) return; if (!f.name.endsWith('.py')) { msg.error('只能上传 .py 文件'); return }; const fd = new FormData(); fd.append('file', f); fd.append('directory', 'alone'); try { const r = await axios.post('/api/plugins/upload', fd); r.data.success ? (msg.success(r.data.message || '上传成功'), await fetchAll()) : msg.error(r.data.message || '上传失败') } catch { msg.error('上传失败') } }
+async function uploadPlugin(e) { const f = e.target.files?.[0]; e.target.value = ''; if (!f) return; if (!f.name.endsWith('.py') && !f.name.endsWith('.zip')) { msg.error('仅支持 .py 或 .zip 文件'); return }; const fd = new FormData(); fd.append('file', f); if (f.name.endsWith('.py')) fd.append('directory', 'alone'); try { const r = await axios.post('/api/plugins/upload', fd, f.name.endsWith('.zip') ? { timeout: 120000 } : {}); r.data.success ? (msg.success(r.data.message || '上传成功'), await fetchAll()) : msg.error(r.data.message || '上传失败') } catch { msg.error('上传失败') } }
 async function uploadModule(e) { const f = e.target.files?.[0]; e.target.value = ''; if (!f) return; if (!f.name.endsWith('.zip')) { msg.error('模块仅支持 .zip 格式'); return }; const fd = new FormData(); fd.append('file', f); try { const r = await axios.post('/api/modules/upload', fd); r.data.success ? (msg.success(r.data.message || '模块上传成功'), await fetchAll()) : msg.error(r.data.message || '上传失败') } catch { msg.error('模块上传失败') } }
 
 async function readFile(file) {
@@ -225,7 +225,7 @@ onMounted(() => { appStore.fetchBots(); fetchAll() })
     <div class="plugins-toolbar">
       <select v-model="mode" class="p-select"><option value="all">全部</option><option value="plugin">插件</option><option value="module">模块</option></select>
       <input v-model="search" class="p-search" placeholder="搜索插件或模块..." />
-      <label v-if="mode !== 'module'" class="p-btn upload-btn"><SvgIcon name="upload" :size="14" /><span>上传插件</span><input type="file" accept=".py" hidden @change="uploadPlugin" /></label>
+      <label v-if="mode !== 'module'" class="p-btn upload-btn"><SvgIcon name="upload" :size="14" /><span>上传插件</span><input type="file" accept=".py,.zip" hidden @change="uploadPlugin" /></label>
       <label v-if="mode !== 'plugin'" class="p-btn upload-btn"><SvgIcon name="upload" :size="14" /><span>上传模块</span><input type="file" accept=".zip" hidden @change="uploadModule" /></label>
       <button class="p-btn" @click="fetchAll" :disabled="loading">刷新</button>
     </div>
