@@ -540,8 +540,8 @@ onUnmounted(() => { _unmounted = true; off('new_log', onNewLog); window.removeEv
                   {{ m.nickname }}
                   <span v-if="m.source === 'web_panel'" class="bubble-src-tag">Web</span>
                   <span v-else-if="m.source === 'onebot'" class="bubble-src-tag ob-tag">OneBot</span>
-                  <span v-if="isBot(m.user_id) && !m.is_self && apiChatType === 'group'" class="bubble-role-tag role-bot">Bot</span>
                   <span v-if="roleLabel(m.user_id) && !m.is_self && apiChatType === 'group'" :class="['bubble-role-tag', roleClass(m.user_id)]">{{ roleLabel(m.user_id) }}</span>
+                  <span v-if="isBot(m.user_id) && !m.is_self && apiChatType === 'group'" class="bubble-role-tag role-bot">Bot</span>
                   <span v-if="m.user_id && !m.is_self" class="bubble-uid">{{ m.user_id }}</span>
                 </div>
                 <div class="bubble-row">
