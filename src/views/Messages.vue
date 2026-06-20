@@ -239,14 +239,14 @@ async function fetchChats() {
 }
 
 function roleLabel(uid) {
-  const r = groupRoles.value[uid]
+  const r = String(groupRoles.value[uid] || '')
   if (r === '2') return '群主'
   if (r === '3') return '管理'
   if (r === '4') return '群员'
   return ''
 }
 function roleClass(uid) {
-  const r = groupRoles.value[uid]
+  const r = String(groupRoles.value[uid] || '')
   if (r === '2') return 'role-owner'
   if (r === '3') return 'role-admin'
   return 'role-member'
@@ -1121,16 +1121,17 @@ onUnmounted(() => { _unmounted = true; off('new_log', onNewLog); window.removeEv
 .bubble-media-placeholder {
   display:inline-block;
   padding:8px 14px;
-  background:rgba(88,101,242,.1);
-  border:1px dashed rgba(88,101,242,.4);
+  background:rgba(100,180,255,.15);
+  border:1px dashed rgba(100,180,255,.5);
   border-radius:6px;
-  color:#5865f2;
+  color:#7ab8ff;
   cursor:pointer;
   font-size:13px;
   user-select:none
 }
 .bubble-media-placeholder:hover {
-  background:rgba(88,101,242,.2)
+  background:rgba(100,180,255,.25);
+  color:#a0d0ff
 }
 .bubble-media-audio {
   display:block;
