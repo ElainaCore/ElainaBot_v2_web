@@ -238,19 +238,21 @@ async function fetchChats() {
   } catch { if (!_unmounted) { chats.value = []; total.value = 0 } }
 }
 
+function memberInfo(uid) { return groupRoles.value[uid] || {} }
 function roleLabel(uid) {
-  const r = String(groupRoles.value[uid] || '')
-  if (r === '2') return '群主'
-  if (r === '3') return '管理'
-  if (r === '4') return '群员'
+  const r = String(memberInfo(uid).role || '')
+  if (r === 'owner') return '群主'
+  if (r === 'admin') return '管理'
+  if (r) return '群员'
   return ''
 }
 function roleClass(uid) {
-  const r = String(groupRoles.value[uid] || '')
-  if (r === '2') return 'role-owner'
-  if (r === '3') return 'role-admin'
+  const r = String(memberInfo(uid).role || '')
+  if (r === 'owner') return 'role-owner'
+  if (r === 'admin') return 'role-admin'
   return 'role-member'
 }
+function isBot(uid) { return !!memberInfo(uid).is_bot }
 
 const _rolesCache = {}
 const _ROLES_CACHE_TTL = 120000
@@ -538,6 +540,7 @@ onUnmounted(() => { _unmounted = true; off('new_log', onNewLog); window.removeEv
                   {{ m.nickname }}
                   <span v-if="m.source === 'web_panel'" class="bubble-src-tag">Web</span>
                   <span v-else-if="m.source === 'onebot'" class="bubble-src-tag ob-tag">OneBot</span>
+                  <span v-if="isBot(m.user_id) && !m.is_self && apiChatType === 'group'" class="bubble-role-tag role-bot">Bot</span>
                   <span v-if="roleLabel(m.user_id) && !m.is_self && apiChatType === 'group'" :class="['bubble-role-tag', roleClass(m.user_id)]">{{ roleLabel(m.user_id) }}</span>
                   <span v-if="m.user_id && !m.is_self" class="bubble-uid">{{ m.user_id }}</span>
                 </div>
@@ -1062,6 +1065,10 @@ onUnmounted(() => { _unmounted = true; off('new_log', onNewLog); window.removeEv
 .role-member {
   background:#f5f5f5;
   color:#757575
+}
+.role-bot {
+  background:#e3f2fd;
+  color:#1565c0
 }
 .bubble {
   display:block;
