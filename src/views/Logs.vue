@@ -119,7 +119,7 @@ onUnmounted(() => { off('new_log', onNewLog); off('init', onInit) })
         <template v-else-if="tab === 'lifecycle'">
           <span class="t-time">{{ e.timestamp }}</span>
           <span v-if="e.bot_name" class="t-bot">[{{ e.bot_name }}({{ e.appid || '?' }})]</span>
-          <span :class="['t-lc-type', 't-lc-' + (e.event_type || e.type || '')]">{{ { group_add:'入群', group_del:'退群', group_member_add:'用户入群', group_member_del:'用户退群', friend_add:'加好友', friend_del:'删好友', group_msg_reject:'群消息拒绝', group_msg_receive:'群消息恢复', MESSAGE_REACTION_ADD:'表态', MESSAGE_REACTION_REMOVE:'取消表态', GUILD_UPDATE:'频道更新' }[e.event_type || e.type] || e.event_type || e.type }}</span>
+          <span :class="['t-lc-type', 't-lc-' + (e.event_type || e.type || '')]">{{ { group_add:'入群', group_del:'退群', group_member_add:'用户入群', group_member_del:'用户退群', friend_add:'加好友', friend_del:'删好友', group_msg_reject:'关闭主动消息', group_msg_receive:'开启主动消息', MESSAGE_REACTION_ADD:'表态', MESSAGE_REACTION_REMOVE:'取消表态', GUILD_UPDATE:'频道更新' }[e.event_type || e.type] || e.event_type || e.type }}</span>
           <span v-if="e.user_id" class="t-uid">U:{{ e.user_id }}</span>
           <span v-if="e.group_id" class="t-gid">G:{{ e.group_id }}</span>
           <span v-if="e.raw_message || e.content" :class="['t-expand-btn', { active: expandedRaw[i] }]" @click="expandedRaw[i] = !expandedRaw[i]">原始响应</span>
@@ -391,20 +391,20 @@ onUnmounted(() => { off('new_log', onNewLog); off('init', onInit) })
   display:inline-block
 }
 .t-lc-group_add {
-  color:#2e7d32;
+  color:#1b5e20;
   background:#e8f5e9
 }
 .t-lc-group_del {
-  color:#c62828;
+  color:#b71c1c;
   background:#ffebee
 }
 .t-lc-group_member_add {
-  color:#2e7d32;
-  background:#e8f5e9
+  color:#00695c;
+  background:#e0f2f1
 }
 .t-lc-group_member_del {
-  color:#c62828;
-  background:#ffebee
+  color:#880e4f;
+  background:#fce4ec
 }
 .t-lc-friend_add {
   color:#1565c0;
@@ -415,12 +415,24 @@ onUnmounted(() => { off('new_log', onNewLog); off('init', onInit) })
   background:#fff3e0
 }
 .t-lc-group_msg_reject {
-  color:#e65100;
-  background:#fff3e0
+  color:#bf360c;
+  background:#fbe9e7
 }
 .t-lc-group_msg_receive {
-  color:#2e7d32;
-  background:#e8f5e9
+  color:#6a1b9a;
+  background:#f3e5f5
+}
+.t-lc-MESSAGE_REACTION_ADD {
+  color:#283593;
+  background:#e8eaf6
+}
+.t-lc-MESSAGE_REACTION_REMOVE {
+  color:#455a64;
+  background:#eceff1
+}
+.t-lc-GUILD_UPDATE {
+  color:#00838f;
+  background:#e0f7fa
 }
 .t-login-ip {
   color:var(--accent);
