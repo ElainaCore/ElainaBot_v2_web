@@ -145,6 +145,23 @@ async function toggleModule(mod) {
 async function uploadPlugin(e) { const f = e.target.files?.[0]; e.target.value = ''; if (!f) return; if (!f.name.endsWith('.py') && !f.name.endsWith('.zip')) { msg.error('仅支持 .py 或 .zip 文件'); return }; const fd = new FormData(); fd.append('file', f); if (f.name.endsWith('.py')) fd.append('directory', 'alone'); try { const r = await axios.post('/api/plugins/upload', fd, f.name.endsWith('.zip') ? { timeout: 120000 } : {}); r.data.success ? (msg.success(r.data.message || '上传成功'), await fetchAll()) : msg.error(r.data.message || '上传失败') } catch { msg.error('上传失败') } }
 async function uploadModule(e) { const f = e.target.files?.[0]; e.target.value = ''; if (!f) return; if (!f.name.endsWith('.zip')) { msg.error('模块仅支持 .zip 格式'); return }; const fd = new FormData(); fd.append('file', f); try { const r = await axios.post('/api/modules/upload', fd); r.data.success ? (msg.success(r.data.message || '模块上传成功'), await fetchAll()) : msg.error(r.data.message || '上传失败') } catch { msg.error('模块上传失败') } }
 
+// ── 卸载 ──
+const uninstallConfirm = reactive({ show: false, name: '', type: 'plugin', keepData: true, loading: false })
+
+function showUninstall(name, type) {
+  Object.assign(uninstallConfirm, { show: true, name, type, keepData: true, loading: false })
+}
+
+async function doUninstall() {
+  uninstallConfirm.loading = true
+  try {
+    const res = await axios.post('/api/market/uninstall', { name: uninstallConfirm.name, type: uninstallConfirm.type, keep_data: uninstallConfirm.keepData })
+    if (res.data.success) { msg.success(res.data.message || '已卸载'); uninstallConfirm.show = false; await fetchAll() }
+    else msg.error(res.data.message || '卸载失败')
+  } catch { msg.error('卸载请求失败') }
+  finally { uninstallConfirm.loading = false }
+}
+
 async function readFile(file) {
   if (!file.path) { msg.error('无文件路径'); return }
   try {
@@ -251,6 +268,7 @@ onMounted(() => { appStore.fetchBots(); fetchAll() })
               <input type="checkbox" :checked="m.persist_enabled" :disabled="m._toggling" @change="toggleModule(m)" /><span />
             </label>
             <span v-if="m.config_files?.length" class="p-tag config-tag" @click="openModuleConfig(m)"><SvgIcon name="settings" :size="10" /> 配置 </span>
+            <span class="p-tag uninstall-tag" @click="showUninstall(m.name, 'module')"><SvgIcon name="trash" :size="10" /> 卸载</span>
           </div>
         </div>
         <div v-if="expanded['m_' + m.name]" class="p-dir-files">
@@ -290,6 +308,7 @@ onMounted(() => { appStore.fetchBots(); fetchAll() })
             <span :class="['p-tag bot-bind-tag', { active: d.allowed_bots?.length }]" @click="toggleBotBind(d.directory)">
               <SvgIcon name="people" :size="10" /> {{ d.allowed_bots?.length ? d.allowed_bots.length + '个机器人' : '全部机器人' }}
             </span>
+            <span v-if="d.is_large && !d.is_system" class="p-tag uninstall-tag" @click="showUninstall(d.directory, 'plugin')"><SvgIcon name="trash" :size="10" /> 卸载</span>
           </div>
         </div>
         <!-- Dir bot bind -->
@@ -332,6 +351,7 @@ onMounted(() => { appStore.fetchBots(); fetchAll() })
                 </span>
                 <label v-if="!(entryDisabled(d) && isSubFile(f))" class="p-switch-sm" :title="f.enabled ? '禁用' : '启用'"><input type="checkbox" :checked="f.enabled" :disabled="f._toggling" @change="toggleFile(f, d)" /><span /></label>
                 <button class="p-act-btn sm" @click="readFile(f)" title="查看代码"><SvgIcon name="code" :size="13" /></button>
+                <button v-if="!d.is_large && !d.is_system" class="p-act-btn sm danger-btn" @click.stop="showUninstall(d.directory === 'alone' ? fileBase(f) : d.directory, 'plugin')" title="卸载"><SvgIcon name="trash" :size="13" /></button>
               </div>
             </div>
             <!-- File-level bot bind -->
@@ -344,6 +364,22 @@ onMounted(() => { appStore.fetchBots(); fetchAll() })
               </label>
             </div>
           </template>
+        </div>
+      </div>
+    </div>
+
+    <!-- Uninstall confirm modal -->
+    <div v-if="uninstallConfirm.show" class="p-modal-overlay" @click.self="uninstallConfirm.show = false">
+      <div class="p-uninstall-confirm">
+        <div class="p-uninstall-title">确认卸载</div>
+        <div class="p-uninstall-msg">确定卸载 <b>{{ uninstallConfirm.name }}</b> 吗？</div>
+        <label class="p-uninstall-check">
+          <input type="checkbox" v-model="uninstallConfirm.keepData" />
+          <span>保留插件数据</span>
+        </label>
+        <div class="p-uninstall-btns">
+          <button class="p-btn" @click="uninstallConfirm.show = false">取消</button>
+          <button class="p-btn danger" @click="doUninstall" :disabled="uninstallConfirm.loading">{{ uninstallConfirm.loading ? '卸载中...' : '卸载' }}</button>
         </div>
       </div>
     </div>
@@ -1224,5 +1260,71 @@ details[open]>.cfg-group-title:before {
 .cfg-array-item {
   flex-wrap:wrap
 }
+}
+.uninstall-tag {
+  color:#ff453a !important;
+  border-color:#ff453a4d !important;
+  cursor:pointer
+}
+.uninstall-tag:hover {
+  border-color:#ff453a !important;
+  background:#ff453a1a
+}
+.p-uninstall-confirm {
+  background:var(--bg);
+  border:1px solid var(--border);
+  border-radius:12px;
+  padding:20px 24px;
+  width:340px;
+  max-width:90vw
+}
+.p-uninstall-title {
+  font-size:15px;
+  font-weight:600;
+  color:var(--text);
+  margin-bottom:8px
+}
+.p-uninstall-msg {
+  font-size:13px;
+  color:var(--text2);
+  margin-bottom:14px;
+  line-height:1.5
+}
+.p-uninstall-check {
+  display:flex;
+  align-items:center;
+  gap:6px;
+  font-size:13px;
+  color:var(--text2);
+  margin-bottom:16px;
+  cursor:pointer
+}
+.p-uninstall-check input[type="checkbox"] {
+  width:15px;
+  height:15px;
+  accent-color:var(--accent)
+}
+.p-uninstall-btns {
+  display:flex;
+  justify-content:flex-end;
+  gap:8px
+}
+.p-btn.danger {
+  color:#fff;
+  background:#ff453a;
+  border-color:#ff453a
+}
+.p-btn.danger:hover {
+  background:#e03e34
+}
+.p-btn.danger:disabled {
+  opacity:.5;
+  cursor:default
+}
+.p-act-btn.danger-btn {
+  color:#ff453a
+}
+.p-act-btn.danger-btn:hover {
+  background:#ff453a1a
 }
 </style>
