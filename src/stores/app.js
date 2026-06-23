@@ -13,6 +13,7 @@ export const useAppStore = defineStore('app', () => {
   const sidebarCollapsed = ref(false)
   const webPages = ref([])
 
+  let _botsPromise = null
   async function fetchBots() {
     try {
       const res = await axios.get('/api/bots')
@@ -21,6 +22,11 @@ export const useAppStore = defineStore('app', () => {
         switchBot(bots.value[0].appid)
       }
     } catch {}
+  }
+  // 首次加载去重: 保证只请求一次 /api/bots, 并在视图发起统计请求前确定 currentBotId
+  function ensureBots() {
+    if (!_botsPromise) _botsPromise = fetchBots()
+    return _botsPromise
   }
 
   function switchBot(appid) {
@@ -55,6 +61,6 @@ export const useAppStore = defineStore('app', () => {
   return {
     bots, currentBotId, currentBot, isAllBots,
     systemInfo, sidebarCollapsed, webPages,
-    fetchBots, switchBot, fetchSystemInfo, fetchWebPages, toggleBot,
+    fetchBots, ensureBots, switchBot, fetchSystemInfo, fetchWebPages, toggleBot,
   }
 })
