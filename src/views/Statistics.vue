@@ -10,36 +10,39 @@ Chart.register(Filler, LineElement, PointElement, BarElement, CategoryScale, Lin
 
 const app = useAppStore()
 const loading = ref(false)
-const stats = ref({})
 const days = ref(7)
 const chartData = ref(null)
 const hasChart = ref(false)
 const chartTab = ref('msg')
 const TABS = [{ key: 'msg', label: '消息统计' }, { key: 'active', label: '活跃统计' }, { key: 'event', label: '事件统计' }]
 
-const today = computed(() => stats.value?.today || {})
-const msgStats = computed(() => today.value?.message_stats || {})
-const evStats = computed(() => today.value?.event_stats || {})
-const hourly = computed(() => today.value?.hourly_distribution || [])
-const topGroups = computed(() => today.value?.top_groups || [])
-const topUsers = computed(() => today.value?.top_users || [])
-const topCmds = computed(() => today.value?.top_commands || [])
+// 拆分数据源 — 各接口独立加载, 先返回先渲染
+const summary = ref({})
+const active = ref({})
+const top = ref({})
+const events = ref({})
+const totals = ref({})
+const hourly = ref([])
+
+const topGroups = computed(() => top.value?.top_groups || [])
+const topUsers = computed(() => top.value?.top_users || [])
+const topCmds = computed(() => top.value?.top_commands || [])
 
 const overviewCards = computed(() => {
   const c = chartData.value
   return [
-    { tab: 'msg', label: '今日消息', value: msgStats.value.total_messages ?? 0 },
-    { tab: 'msg', label: '私聊消息', value: msgStats.value.private_messages ?? 0 },
-    { tab: 'msg', label: '群聊消息', value: (msgStats.value.total_messages ?? 0) - (msgStats.value.private_messages ?? 0) },
-    { tab: 'active', label: '活跃用户', value: msgStats.value.active_users ?? 0 },
-    { tab: 'active', label: '活跃群聊', value: msgStats.value.active_groups ?? 0 },
-    { tab: 'total', label: '总用户数', value: today.value?.total_users ?? 0 },
-    { tab: 'total', label: '总群组数', value: today.value?.total_groups ?? 0 },
+    { tab: 'msg', label: '今日消息', value: summary.value.total_messages ?? 0 },
+    { tab: 'msg', label: '私聊消息', value: summary.value.private_messages ?? 0 },
+    { tab: 'msg', label: '群聊消息', value: (summary.value.total_messages ?? 0) - (summary.value.private_messages ?? 0) },
+    { tab: 'active', label: '活跃用户', value: active.value.active_users ?? 0 },
+    { tab: 'active', label: '活跃群聊', value: active.value.active_groups ?? 0 },
+    { tab: 'total', label: '总用户数', value: totals.value.total_users ?? 0 },
+    { tab: 'total', label: '总群组数', value: totals.value.total_groups ?? 0 },
     { tab: 'total', label: '总好友数', value: c?.total_friends ?? 0 },
-    { tab: 'event', label: '进群', value: evStats.value.group_join_count ?? 0 },
-    { tab: 'event', label: '退群', value: evStats.value.group_leave_count ?? 0 },
-    { tab: 'event', label: '加好友', value: evStats.value.friend_add_count ?? 0 },
-    { tab: 'event', label: '删好友', value: evStats.value.friend_remove_count ?? 0 },
+    { tab: 'event', label: '进群', value: events.value.group_join_count ?? 0 },
+    { tab: 'event', label: '退群', value: events.value.group_leave_count ?? 0 },
+    { tab: 'event', label: '加好友', value: events.value.friend_add_count ?? 0 },
+    { tab: 'event', label: '删好友', value: events.value.friend_remove_count ?? 0 },
   ]
 })
 
@@ -59,7 +62,23 @@ const barData = computed(() => ({ labels: Array.from({ length: 24 }, (_, i) => `
 const lineOpts = { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { legend: { labels: { color: '#8b949e', font: { size: 12 }, usePointStyle: true, pointStyle: 'circle' } }, tooltip: { mode: 'index', intersect: false }, datalabels: { color: '#8b949e', font: { size: 10, weight: 600 }, anchor: 'end', align: 'top', offset: 2, formatter: v => v > 0 ? v : '' } }, scales: { x: { ticks: { color: '#484f58' }, grid: { color: 'rgba(48,54,61,0.6)' } }, y: { beginAtZero: true, ticks: { color: '#484f58', precision: 0 }, grid: { color: 'rgba(48,54,61,0.6)' } } } }
 const barOpts = { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { mode: 'index', intersect: false }, datalabels: { display: false } }, scales: { x: { ticks: { color: '#484f58', maxRotation: 0 }, grid: { display: false } }, y: { beginAtZero: true, ticks: { color: '#484f58', precision: 0 }, grid: { color: 'rgba(48,54,61,0.6)' } } } }
 
-async function fetchStats() { try { const r = await axios.get(`/api/statistics?appid=${app.currentBotId || ''}`); stats.value = r.data?.data || {} } catch {} }
+async function fetchStats() {
+  const appid = app.currentBotId || ''
+  const q = `appid=${appid}`
+  // 并行请求所有拆分接口, 各自独立更新 — 先到先渲染
+  const tasks = [
+    axios.get(`/api/statistics/summary?${q}`).then(r => { summary.value = r.data?.data || {} }).catch(() => {}),
+    axios.get(`/api/statistics/active?${q}`).then(r => { active.value = r.data?.data || {} }).catch(() => {}),
+    axios.get(`/api/statistics/top?${q}`).then(r => { top.value = r.data?.data || {} }).catch(() => {}),
+    axios.get(`/api/statistics/events?${q}`).then(r => { events.value = r.data?.data || {} }).catch(() => {}),
+    axios.get(`/api/statistics/totals?${q}`).then(r => { totals.value = r.data?.data || {} }).catch(() => {}),
+    axios.get(`/api/statistics/hourly?${q}`).then(r => {
+      const d = r.data?.data || {}
+      hourly.value = d.today_hourly_distribution || []
+    }).catch(() => {}),
+  ]
+  await Promise.all(tasks)
+}
 async function fetchChart() { try { const r = await axios.get(`/api/statistics/chart?days=${days.value}&appid=${app.currentBotId || ''}`); chartData.value = r.data?.data || null; hasChart.value = !!chartData.value } catch {} }
 async function refresh() { loading.value = true; await Promise.all([fetchStats(), fetchChart()]); loading.value = false }
 
