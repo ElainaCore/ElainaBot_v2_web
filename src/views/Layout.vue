@@ -164,7 +164,7 @@ function handleLogout() {
 onMounted(async () => {
   handleResize()
   window.addEventListener('resize', handleResize)
-  await app.fetchBots()
+  await app.ensureBots()
   app.fetchSystemInfo()
   await app.fetchWebPages()
   connect()
