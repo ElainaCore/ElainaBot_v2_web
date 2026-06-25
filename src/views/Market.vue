@@ -8,11 +8,13 @@ const msg = useMessage()
 const items = ref([])
 const search = ref('')
 const category = ref('')
-const type = ref('plugin')
+const type = ref('complete')
 const loading = ref(false)
 const error = ref('')
 const preview = reactive({ show: false, name: '', type: '', content: '', files: [], loading: false, error: '' })
-const isPlugin = computed(() => type.value === 'plugin')
+// 规范化清单类型: complete(完整插件) / single(独立插件) / module(模块)
+function normType(i) { const t = (i.type || '').toLowerCase(); if (t === 'module') return 'module'; if (t === 'single' || t === 'standalone' || t === 'alone') return 'single'; return 'complete' }
+const isModule = computed(() => type.value === 'module')
 
 // ── 镜像选择 ──
 const mirrorShow = ref(false)
@@ -66,7 +68,7 @@ async function testMirror(m) {
 watch(type, () => { category.value = '' })
 
 const filtered = computed(() => {
-  let list = items.value.filter(i => (i.type || 'plugin') === type.value)
+  let list = items.value.filter(i => normType(i) === type.value)
   if (category.value) list = list.filter(i => i.category === category.value)
   const q = search.value.toLowerCase()
   if (q) list = list.filter(i => (i.name || '').toLowerCase().includes(q) || (i.description || '').toLowerCase().includes(q) || (i.author || '').toLowerCase().includes(q) || (i.tags || []).some(t => t.toLowerCase().includes(q)))
@@ -74,7 +76,7 @@ const filtered = computed(() => {
 })
 
 const categories = computed(() => {
-  const list = items.value.filter(i => (i.type || 'plugin') === type.value)
+  const list = items.value.filter(i => normType(i) === type.value)
   return [...new Set(list.map(i => i.category).filter(Boolean))]
 })
 
@@ -108,14 +110,14 @@ async function previewItem(item) {
 
 async function install(item) {
   if (item._installing) return; item._installing = true
-  try { const res = await axios.post('/api/market/install', { name: item.name, type: item.type || 'plugin', github: item.github || '', url: item.download_url || '', path: item.path || '', branch: item.branch || 'main', mirror: selectedMirror.value }); if (res.data.success) { msg.success(res.data.message || `${item.name} 安装成功`); await fetchList() } else msg.error(res.data.message || '安装失败') }
+  try { const res = await axios.post('/api/market/install', { name: item.name, type: normType(item), github: item.github || '', url: item.download_url || '', path: item.path || '', alone: item.alone !== false, branch: item.branch || 'main', mirror: selectedMirror.value }); if (res.data.success) { msg.success(res.data.message || `${item.name} 安装成功`); await fetchList() } else msg.error(res.data.message || '安装失败') }
   catch { msg.error('安装请求失败') }
   finally { item._installing = false }
 }
 
 async function uninstall(item) {
   if (item._uninstalling) return; item._uninstalling = true
-  try { const res = await axios.post('/api/market/uninstall', { name: item.name, type: item.type || 'plugin' }); if (res.data.success) { msg.success(res.data.message || `${item.name} 已卸载`); await fetchList() } else msg.error(res.data.message || '卸载失败') }
+  try { const res = await axios.post('/api/market/uninstall', { name: item.name, type: normType(item) }); if (res.data.success) { msg.success(res.data.message || `${item.name} 已卸载`); await fetchList() } else msg.error(res.data.message || '卸载失败') }
   catch { msg.error('卸载请求失败') }
   finally { item._uninstalling = false }
 }
@@ -131,7 +133,7 @@ onMounted(() => { fetchList(); fetchMirror() })
         <span v-if="items.length" class="market-count">{{ filtered.length }}</span>
       </div>
       <div class="market-actions">
-        <select v-model="type" class="m-select"><option value="plugin">插件</option><option value="module">模块</option></select>
+        <select v-model="type" class="m-select"><option value="complete">完整插件</option><option value="single">独立插件</option><option value="module">模块</option></select>
         <select v-model="category" class="m-select"><option value="">全部分类</option><option v-for="c in categories" :key="c" :value="c">{{ c }}</option></select>
         <input v-model="search" class="m-search" placeholder="搜索..." />
         <div class="m-mirror-wrap">
@@ -166,7 +168,7 @@ onMounted(() => { fetchList(); fetchMirror() })
           <div class="m-card-head">
             <div class="m-card-icon">
               <img v-if="avatarUrl(item)" :src="avatarUrl(item)" class="m-avatar" @error="e => e.target.style.display='none'" />
-              <SvgIcon v-else :name="isPlugin ? 'extension-puzzle' : 'cube'" :size="20" />
+              <SvgIcon v-else :name="isModule ? 'cube' : 'extension-puzzle'" :size="20" />
             </div>
             <div class="m-card-info">
               <div class="m-card-name">{{ item.name }}</div>
@@ -183,10 +185,10 @@ onMounted(() => { fetchList(); fetchMirror() })
           </div>
           <div class="m-card-foot">
             <a v-if="item.github" :href="item.github" target="_blank" class="m-link" title="GitHub"><SvgIcon name="globe" :size="14" /><span>仓库</span></a>
-            <template v-if="isPlugin"><span v-if="item.path" class="m-type-badge">单文件</span><span v-else class="m-type-badge repo">仓库</span></template>
+            <template v-if="!isModule"><span v-if="normType(item) === 'single'" class="m-type-badge" :title="item.alone === false ? '独立文件夹 plugins/' + item.name + '/' : '共享 plugins/alone/'">独立</span><span v-else class="m-type-badge repo">完整</span></template>
             <div class="m-card-btns">
-              <button v-if="isPlugin && item.path" class="m-btn sm preview" @click="previewItem(item)" :disabled="item._previewing"><SvgIcon name="code" :size="13" /> 预览</button>
-              <button v-if="item.installed" class="m-btn sm uninstall" @click="uninstall(item)" :disabled="item._uninstalling || (isPlugin && item.name === 'system')"><SvgIcon name="trash" :size="13" /> {{ item._uninstalling ? '卸载中...' : '卸载' }}</button>
+              <button v-if="!isModule && (item.path || item.github)" class="m-btn sm preview" @click="previewItem(item)" :disabled="item._previewing"><SvgIcon name="code" :size="13" /> 预览</button>
+              <button v-if="item.installed" class="m-btn sm uninstall" @click="uninstall(item)" :disabled="item._uninstalling || (!isModule && item.name === 'system')"><SvgIcon name="trash" :size="13" /> {{ item._uninstalling ? '卸载中...' : '卸载' }}</button>
               <button :class="['m-btn sm install', { update: item.has_update }]" @click="install(item)" :disabled="item._installing"><SvgIcon name="cloud-download" :size="13" /> {{ item._installing ? '安装中...' : item.has_update ? '更新' : item.installed ? '重装' : '安装' }}</button>
             </div>
           </div>
