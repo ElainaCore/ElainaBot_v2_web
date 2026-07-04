@@ -127,11 +127,14 @@ const webhookPortOk = computed(() => ['80','443','8080','8443'].includes(String(
 const webhookIsHttps = computed(() => location.protocol === 'https:')
 
 async function checkDefaultPassword() {
-  if (auth.isWeakPassword) { showDefaultPwdWarning.value = true; return }
   try {
     const res = await axios.get('/api/auth/password-status')
-    if (res.data?.is_default) showDefaultPwdWarning.value = true
-  } catch {}
+    const isDefault = !!res.data?.is_default
+    auth.setWeakPassword(isDefault)
+    if (isDefault) showDefaultPwdWarning.value = true
+  } catch {
+    if (auth.isWeakPassword) showDefaultPwdWarning.value = true
+  }
 }
 
 async function clearCache() {
@@ -144,8 +147,10 @@ async function clearCache() {
       const regs = await navigator.serviceWorker.getRegistrations()
       await Promise.all(regs.map(r => r.unregister()))
     }
+    const token = localStorage.getItem('elaina_token')
     localStorage.clear()
     sessionStorage.clear()
+    if (token) localStorage.setItem('elaina_token', token)
     // 强制绕过浏览器 HTTP 缓存重新加载
     window.location.href = window.location.pathname + '?_t=' + Date.now()
   } catch { window.location.href = window.location.pathname + '?_t=' + Date.now() }
