@@ -376,6 +376,7 @@ onUnmounted(() => {
               <div class="bd-sub">AppID: {{ detailBot.appid }}</div>
               <div v-if="detailData.qq" class="bd-sub">QQ: {{ detailData.qq }}</div>
               <div v-if="detailBot.bot_id" class="bd-sub">Bot ID: {{ detailBot.bot_id }}</div>
+              <div v-if="detailData.union_openid || detailBot.union_openid" class="bd-sub">Union OpenID: {{ detailData.union_openid || detailBot.union_openid }}</div>
             </div>
           </div>
 
