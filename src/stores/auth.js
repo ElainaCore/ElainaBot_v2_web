@@ -15,10 +15,7 @@ export const useAuthStore = defineStore('auth', () => {
       if (res.data.success) {
         token.value = res.data.token
         localStorage.setItem('elaina_token', token.value)
-        const weak = WEAK_PASSWORDS.has(password)
-        isWeakPassword.value = weak
-        if (weak) localStorage.setItem('elaina_weak_pwd', '1')
-        else localStorage.removeItem('elaina_weak_pwd')
+        setWeakPassword(WEAK_PASSWORDS.has(password))
         return true
       }
       throw new Error(res.data.error || '登录失败')
@@ -26,6 +23,12 @@ export const useAuthStore = defineStore('auth', () => {
       const msg = e.response?.data?.error || e.message || '登录失败'
       throw new Error(msg)
     }
+  }
+
+  function setWeakPassword(weak) {
+    isWeakPassword.value = weak
+    if (weak) localStorage.setItem('elaina_weak_pwd', '1')
+    else localStorage.removeItem('elaina_weak_pwd')
   }
 
   function logout() {
@@ -45,5 +48,5 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  return { token, isLoggedIn, isWeakPassword, login, logout, checkSession }
+  return { token, isLoggedIn, isWeakPassword, setWeakPassword, login, logout, checkSession }
 })
