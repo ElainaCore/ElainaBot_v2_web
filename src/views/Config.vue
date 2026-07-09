@@ -124,7 +124,7 @@ function addBot() {
     welcome: { group_welcome: false, new_user_welcome: false, friend_add_message: false },
     maintenance: { enabled: false, reply: true },
     dedup: { enabled: false },
-    blacklist: { user_enabled: false, group_enabled: false, user_list: [], group_list: [] },
+    blacklist: { user_list: [], group_list: [] },
     non_at_message: { enabled: false, group_whitelist: [], ignore_at_other_bot: true, ignore_at_other_user: true, ignore_bot_sender: false, quiet_at_self: false, strip_bot_name_at: false },
   })
   raw.bot = dumpBot(d); botIndex.value = d.bots.length - 1; dirty.value = true
@@ -306,12 +306,10 @@ onMounted(fetchConfig)
               <div class="vis-field"><label>维护模式</label><label class="vis-switch"><input type="checkbox" :checked="(currentBot.maintenance||{}).enabled" @change="updateBotNested(botIndex, 'maintenance', 'enabled', $event.target.checked)" /><span /></label></div>
               <div v-if="(currentBot.maintenance||{}).enabled" class="vis-field"><label>维护时回复提示</label><label class="vis-switch"><input type="checkbox" :checked="(currentBot.maintenance||{}).reply !== false" @change="updateBotNested(botIndex, 'maintenance', 'reply', $event.target.checked)" /><span /></label></div>
               <div class="vis-field"><label>事件去重</label><label class="vis-switch"><input type="checkbox" :checked="(currentBot.dedup||{}).enabled" @change="updateBotNested(botIndex, 'dedup', 'enabled', $event.target.checked)" /><span /></label></div>
-              <div class="vis-field"><label>用户黑名单</label><label class="vis-switch"><input type="checkbox" :checked="(currentBot.blacklist||{}).user_enabled" @change="updateBotNested(botIndex, 'blacklist', 'user_enabled', $event.target.checked)" /><span /></label></div>
-              <div class="vis-field"><label>群黑名单</label><label class="vis-switch"><input type="checkbox" :checked="(currentBot.blacklist||{}).group_enabled" @change="updateBotNested(botIndex, 'blacklist', 'group_enabled', $event.target.checked)" /><span /></label></div>
             </div>
-            <div v-if="(currentBot.blacklist||{}).user_enabled || (currentBot.blacklist||{}).group_enabled" class="vis-grid" style="margin-top:8px">
-              <div v-if="(currentBot.blacklist||{}).user_enabled" class="vis-field"><label>用户黑名单列表</label><input :value="((currentBot.blacklist||{}).user_list||[]).join(',')" @input="updateBotNestedList(botIndex, 'blacklist', 'user_list', $event)" placeholder="OpenID, 逗号分隔" /></div>
-              <div v-if="(currentBot.blacklist||{}).group_enabled" class="vis-field"><label>群黑名单列表</label><input :value="((currentBot.blacklist||{}).group_list||[]).join(',')" @input="updateBotNestedList(botIndex, 'blacklist', 'group_list', $event)" placeholder="群 OpenID, 逗号分隔" /></div>
+            <div class="vis-grid" style="margin-top:8px">
+              <div class="vis-field"><label>用户黑名单列表</label><input :value="((currentBot.blacklist||{}).user_list||[]).join(',')" @input="updateBotNestedList(botIndex, 'blacklist', 'user_list', $event)" placeholder="OpenID, 逗号分隔" /></div>
+              <div class="vis-field"><label>群黑名单列表</label><input :value="((currentBot.blacklist||{}).group_list||[]).join(',')" @input="updateBotNestedList(botIndex, 'blacklist', 'group_list', $event)" placeholder="群 OpenID, 逗号分隔" /></div>
             </div>
             <div class="vis-section">全量环境 <span style="font-weight:normal;color:var(--text-secondary);font-size:12px">开启后全量消息匹配正则插件, 不判断是否@机器人</span></div>
             <div class="vis-grid">
