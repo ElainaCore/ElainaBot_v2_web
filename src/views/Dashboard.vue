@@ -16,6 +16,32 @@ const sys = computed(() => app.systemInfo || {})
 const todayHourly = ref([])
 const yesterdayHourly = ref([])
 const chartLoading = ref(true)
+const depsInfo = ref(null)
+
+const STATUS_TEXT = { low: '版本偏低', high: '版本偏高', missing: '未安装' }
+function depTip(status) {
+  const t = STATUS_TEXT[status]
+  return t ? `${t}，可能会出现某种异常` : ''
+}
+const abnormalDeps = computed(() => {
+  if (!depsInfo.value) return 0
+  let n = depsInfo.value.python?.status !== 'ok' ? 1 : 0
+  n += (depsInfo.value.dependencies || []).filter(d => d.status !== 'ok').length
+  return n
+})
+const abnormalTips = computed(() => {
+  if (!depsInfo.value) return ''
+  const items = []
+  if (depsInfo.value.python?.status !== 'ok') items.push(`Python ${STATUS_TEXT[depsInfo.value.python?.status] || ''}`)
+  for (const d of depsInfo.value.dependencies || []) {
+    if (d.status !== 'ok') items.push(`${d.name} ${STATUS_TEXT[d.status] || ''}`)
+  }
+  return items.length ? `${items.join('、')}，可能会出现某种异常` : ''
+})
+
+async function fetchDeps() {
+  try { depsInfo.value = responsePayload(await axios.get('/api/system/dependencies')) } catch {}
+}
 
 const statCards = computed(() => {
   const s = sys.value
@@ -31,7 +57,6 @@ const statCards = computed(() => {
 
 const ringColor = (v) => !v ? 'var(--accent)' : v > 90 ? 'var(--danger)' : v > 70 ? 'var(--warning)' : 'var(--success)'
 const fmtMem = (v) => !v ? '-' : v > 1024 ? `${(v / 1024).toFixed(1)} GB` : `${Math.round(v)} MB`
-const fmtBytes = (v) => { if (!v) return '-'; const g = v / 1024 ** 3; return g >= 1 ? `${g.toFixed(1)} GB` : `${(v / 1024 ** 2).toFixed(0)} MB` }
 function fmtUptime(s) {
   if (!s) return '-'
   const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60)
@@ -92,17 +117,12 @@ async function fetchChart() {
 
 function onSysInfo(data) { app.systemInfo = data }
 let timer
-onMounted(() => { on('system_info', onSysInfo); timer = setInterval(() => app.fetchSystemInfo(), 10000); fetchChart() })
+onMounted(() => { on('system_info', onSysInfo); timer = setInterval(() => app.fetchSystemInfo(), 10000); fetchChart(); fetchDeps() })
 onUnmounted(() => { off('system_info', onSysInfo); clearInterval(timer) })
 </script>
 
 <template>
   <div class="dash">
-    <div class="banner">
-      <h2>Elaina 管理面板</h2>
-      <p>运行 {{ fmtUptime(sys?.uptime) }} · {{ sys?.system_version || '' }}</p>
-    </div>
-
     <div class="ui-stat-grid stat-grid">
       <div v-for="s in statCards" :key="s.label" :class="['ui-stat', s.color]">
         <div class="ui-stat-top">
@@ -153,37 +173,50 @@ onUnmounted(() => { off('system_info', onSysInfo); clearInterval(timer) })
           </div>
         </div>
 
-        <!-- Disk -->
-        <div class="res-card">
-          <div class="res-header"><span>磁盘</span></div>
-          <div v-if="sys?.disk_info" class="res-body">
-            <div class="progress-ring">
-              <svg viewBox="0 0 72 72">
-                <circle cx="36" cy="36" r="30" fill="none" stroke="var(--border)" stroke-width="5" />
-                <circle cx="36" cy="36" r="30" fill="none" :stroke="ringColor(sys?.disk_info?.percent)" stroke-width="5" stroke-linecap="round" :stroke-dasharray="188.5" :stroke-dashoffset="188.5 - 188.5 * (sys?.disk_info?.percent || 0) / 100" transform="rotate(-90 36 36)" />
-              </svg>
-              <span class="ring-text">{{ Math.round(sys?.disk_info?.percent || 0) }}%</span>
-            </div>
-            <div class="res-info">
-              <div>总计 <b>{{ fmtBytes(sys.disk_info.total) }}</b></div>
-              <div>已用 <b>{{ fmtBytes(sys.disk_info.used) }}</b> ({{ sys.disk_info.percent }}%)</div>
-              <div>可用 <b>{{ fmtBytes(sys.disk_info.free) }}</b></div>
-            </div>
+        <!-- 运行环境 (占满两列) -->
+        <div v-if="depsInfo" class="res-card deps-card">
+          <div class="res-header">
+            <span class="res-title"><SvgIcon name="cube" :size="15" class="res-title-ic" />运行环境</span>
+            <span v-if="abnormalDeps" class="deps-warn" :title="abnormalTips"><SvgIcon name="alert-circle" :size="13" /><span class="deps-warn-tip">{{ abnormalTips }}</span></span>
+            <span v-else class="deps-ok">版本正常</span>
           </div>
-        </div>
-
-        <!-- Runtime -->
-        <div class="res-card">
-          <div class="res-header"><span>运行状态</span></div>
-          <div class="res-info-full">
-            <div>启动时间 <b>{{ sys?.start_time || '-' }}</b></div>
-            <div>框架运行 <b>{{ fmtUptime(sys?.uptime) }}</b></div>
-            <div>系统运行 <b>{{ fmtUptime(sys?.system_uptime) }}</b></div>
+          <div class="deps-grid">
+            <div :class="['dep-item', { 'dep-bad': depsInfo.python?.status !== 'ok' }]" :title="depTip(depsInfo.python?.status)">
+              <span :class="['dep-dot', depsInfo.python?.status === 'ok' ? 'dot-ok' : 'dot-bad']"></span>
+              <span class="dep-name">Python</span>
+              <span class="dep-ver">{{ depsInfo.python?.version }}</span>
+              <span class="dep-req">要求 {{ depsInfo.python?.required || '不限' }}</span>
+            </div>
+            <div v-for="d in depsInfo.dependencies" :key="d.name" :class="['dep-item', { 'dep-bad': d.status !== 'ok' }]" :title="depTip(d.status)">
+              <span :class="['dep-dot', d.status === 'ok' ? 'dot-ok' : 'dot-bad']"></span>
+              <span class="dep-name">{{ d.name }}</span>
+              <span class="dep-ver">{{ d.installed || '未安装' }}</span>
+              <span class="dep-req">要求 {{ d.required || '不限' }}</span>
+            </div>
           </div>
         </div>
       </div>
 
       <div class="chart-col">
+        <!-- 运行状态 (右侧) -->
+        <div class="res-card runtime-card">
+          <div class="res-header"><span class="res-title"><SvgIcon name="rocket" :size="15" class="res-title-ic" />运行状态</span></div>
+          <div class="runtime-row">
+            <div class="runtime-item">
+              <div class="runtime-ic ic-blue"><SvgIcon name="time" :size="18" /></div>
+              <div class="runtime-txt"><span class="runtime-label">启动时间</span><b>{{ sys?.start_time || '-' }}</b></div>
+            </div>
+            <div class="runtime-item">
+              <div class="runtime-ic ic-purple"><SvgIcon name="rocket" :size="18" /></div>
+              <div class="runtime-txt"><span class="runtime-label">框架运行</span><b>{{ fmtUptime(sys?.uptime) }}</b></div>
+            </div>
+            <div class="runtime-item">
+              <div class="runtime-ic ic-green"><SvgIcon name="server" :size="18" /></div>
+              <div class="runtime-txt"><span class="runtime-label">系统运行</span><b>{{ fmtUptime(sys?.system_uptime) }}</b></div>
+            </div>
+          </div>
+        </div>
+
         <div class="res-card chart-card">
           <div class="res-header"><span>最近 12 小时消息分布</span></div>
           <div class="chart-wrap">
@@ -200,23 +233,6 @@ onUnmounted(() => { off('system_info', onSysInfo); clearInterval(timer) })
 .dash {
   width:100%
 }
-.banner {
-  background:linear-gradient(135deg,var(--accent),var(--accent-light));
-  border-radius:12px;
-  padding:24px 28px;
-  margin-bottom:20px
-}
-.banner h2 {
-  color:#fff;
-  font-size:20px;
-  font-weight:700;
-  margin:0 0 4px
-}
-.banner p {
-  color:#ffffffb3;
-  font-size:13px;
-  margin:0
-}
 .stat-grid {
   grid-template-columns:repeat(4,1fr)
 }
@@ -230,9 +246,13 @@ onUnmounted(() => { off('system_info', onSysInfo); clearInterval(timer) })
   grid-template-columns:1fr 1fr;
   gap:12px;
   width:520px;
-  flex-shrink:0
+  flex-shrink:0;
+  align-content:start
 }
 .chart-col {
+  display:flex;
+  flex-direction:column;
+  gap:12px;
   flex:1;
   min-width:0
 }
@@ -320,6 +340,164 @@ onUnmounted(() => { off('system_info', onSysInfo); clearInterval(timer) })
   text-align:center;
   padding-top:80px;
   font-size:13px
+}
+.deps-card {
+  grid-column:1 / -1
+}
+.res-title {
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  white-space:nowrap;
+  flex-shrink:0
+}
+.res-title-ic {
+  color:var(--accent)
+}
+.runtime-card {
+  padding:14px 18px
+}
+.runtime-row {
+  display:grid;
+  grid-template-columns:repeat(3,1fr);
+  gap:12px
+}
+.runtime-item {
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:10px 12px;
+  border:1px solid var(--border);
+  border-radius:8px;
+  background:var(--bg);
+  font-size:13px;
+  min-width:0
+}
+.runtime-ic {
+  width:34px;
+  height:34px;
+  border-radius:8px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  flex-shrink:0
+}
+.ic-blue {
+  color:#58a6ff;
+  background:#58a6ff1a
+}
+.ic-purple {
+  color:#bc8cff;
+  background:#bc8cff1a
+}
+.ic-green {
+  color:#3fb950;
+  background:#3fb9501a
+}
+.runtime-txt {
+  display:flex;
+  flex-direction:column;
+  gap:2px;
+  min-width:0
+}
+.runtime-label {
+  color:var(--text3);
+  font-size:11px
+}
+.runtime-item b {
+  color:var(--text);
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis
+}
+.deps-ok {
+  color:var(--success);
+  font-size:12px
+}
+.deps-grid {
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(150px,1fr));
+  gap:8px
+}
+.dep-item {
+  position:relative;
+  display:flex;
+  flex-direction:column;
+  gap:2px;
+  padding:8px 10px;
+  border:1px solid var(--border);
+  border-radius:8px;
+  background:var(--bg);
+  font-size:12px;
+  transition:border-color .15s,box-shadow .15s
+}
+.dep-item:hover {
+  border-color:var(--accent);
+  box-shadow:var(--shadow-sm)
+}
+.dep-dot {
+  position:absolute;
+  top:10px;
+  right:10px;
+  width:7px;
+  height:7px;
+  border-radius:50%
+}
+.dot-ok {
+  background:var(--success)
+}
+.dot-bad {
+  background:var(--danger);
+  box-shadow:0 0 0 3px #ef53501f
+}
+.dep-name {
+  color:var(--text);
+  font-weight:600
+}
+.dep-ver {
+  color:var(--text2);
+  font-family:Consolas,Monaco,monospace
+}
+.dep-req {
+  color:var(--text3);
+  font-size:11px
+}
+.dep-item.dep-bad {
+  border-color:var(--danger);
+  background:#ef53500f
+}
+.dep-item.dep-bad .dep-name,.dep-item.dep-bad .dep-ver {
+  color:var(--danger)
+}
+.deps-warn {
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
+  min-width:0;
+  max-width:75%;
+  margin-left:12px;
+  padding:3px 10px;
+  border-radius:12px;
+  color:var(--danger);
+  background:#ef535014;
+  border:1px solid #ef535030
+}
+.deps-warn svg {
+  flex-shrink:0
+}
+.deps-warn-tip {
+  font-size:11px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap
+}
+@media(min-width:1800px) {
+  .sys-col {
+  width:640px
+}
+.chart-wrap {
+  min-height:340px
+}
 }
 @media(max-width:767px) {
   .stat-grid {
