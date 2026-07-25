@@ -22,6 +22,7 @@ const historyRef = ref(null)
 const msgType = ref('markdown')
 const msgText = ref('')
 const imgFile = ref(null)
+const mediaFile = ref(null)
 const sending = ref(false)
 const sendErr = ref('')
 const recalling = ref('')
@@ -32,15 +33,13 @@ const oldestDate = ref('')
 const hasMore = ref(true)
 const loadingOlder = ref(false)
 const mediaFileType = ref('1')
+const mediaAccept = computed(() => ({ '1': 'image/*', '2': 'video/*', '3': 'audio/*', '4': '*/*' }[mediaFileType.value] || '*/*'))
 const sendMode = ref('default')
 const customSendId = ref('')
 const arkTpl = ref('23')
 const arkFields = ref({})
 const arkList = ref('')
 const imgPreview = ref('')
-const mobileTypeOpen = ref(false)
-const mobileMediaOpen = ref(false)
-const mobileSendModeOpen = ref(false)
 const msgTypeOptions = [
   { value: 'markdown', label: 'MD' },
   { value: 'text', label: '文本' },
@@ -62,7 +61,6 @@ const sendModeOptions = [
 ]
 const sendModeShortLabels = { default: '默认', passive: '被动', active: '主动', custom_msg_id: 'msg_id', custom_event_id: '事件ID' }
 const isCustomSendMode = computed(() => sendMode.value === 'custom_msg_id' || sendMode.value === 'custom_event_id')
-const mobileSendModeLabel = computed(() => sendModeShortLabels[sendMode.value] || '默认')
 
 const apiChatType = computed(() => (chatType.value === 'full_access' || chatType.value === 'remark') ? 'group' : chatType.value)
 const groupRoles = ref({})
@@ -74,23 +72,18 @@ const addRemarkModalVisible = ref(false)
 const addRemarkOpenid = ref('')
 const addRemarkName = ref('')
 const addRemarkQq = ref('')
-const placeholder = computed(() => msgType.value === 'markdown' ? '输入 Markdown 内容... (Ctrl+Enter 发送)' : msgType.value === 'media' ? '输入资源 URL... (Ctrl+Enter 发送)' : '输入消息内容... (Ctrl+Enter 发送)')
+const placeholder = computed(() => msgType.value === 'markdown' ? '输入 Markdown 内容...' : msgType.value === 'media' ? '输入资源 URL 或上传文件...' : '输入消息内容...')
 const quotedPreview = computed(() => quotedMsg.value ? buildQuotePreview(quotedMsg.value) : '')
 const olderBtnLabel = computed(() => {
   const today = new Date(); const pad = n => String(n).padStart(2, '0')
   const t = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`
   return (!oldestDate.value || oldestDate.value >= t) ? '查询昨日消息' : '查询更早消息'
 })
-const mobileMsgTypeLabel = computed(() => msgTypeOptions.find(o => o.value === msgType.value)?.label || 'MD')
-const mobileMediaTypeLabel = computed(() => mediaTypeOptions.find(o => o.value === mediaFileType.value)?.label || '图片')
 const MEDIA_RE = /\[(图片|语音|视频|文件|媒体|media)](\S+)/
 
 function handleResize() { isMobile.value = window.innerWidth < 768 }
 function goBackToList() { mobileView.value = 'list'; current.value = null }
-function closeMobileTypeMenu() { mobileTypeOpen.value = false; mobileMediaOpen.value = false; mobileSendModeOpen.value = false }
-function selectMobileMsgType(value) { if (value === 'markdown' && quotedMsg.value) return; msgType.value = value; closeMobileTypeMenu() }
-function selectMobileMediaType(value) { mediaFileType.value = value; closeMobileTypeMenu() }
-function selectMobileSendMode(value) { sendMode.value = value; closeMobileTypeMenu() }
+function selectMsgType(value) { if (value === 'markdown' && quotedMsg.value) return; msgType.value = value }
 function avatarUrl(appid, uid) { return `https://q.qlogo.cn/qqapp/${appid}/${uid}/0` }
 function getBotAvatar(appid) { const bot = app.bots.find(b => b.appid === appid); return bot?.avatar || '' }
 function qqAvatar(qq) { return `http://q1.qlogo.cn/g?b=qq&nk=${qq}&s=100` }
@@ -673,6 +666,8 @@ function onAuditLog(data) {
 
 function onImgSelect(e) { const f = e.target.files?.[0]; if (f) { imgFile.value = f; imgPreview.value = URL.createObjectURL(f) }; e.target.value = '' }
 function clearImg() { if (imgPreview.value) URL.revokeObjectURL(imgPreview.value); imgFile.value = null; imgPreview.value = '' }
+function onMediaSelect(e) { const f = e.target.files?.[0]; if (f) mediaFile.value = f; e.target.value = '' }
+function clearMediaFile() { mediaFile.value = null }
 
 function onKeydown(e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMsg() } }
 
@@ -682,7 +677,7 @@ async function sendMsg() {
   try {
     let content = ''
     if (msgType.value === 'ark') { const kv = buildArkKv(); if (!kv.length) { sendErr.value = '请至少填写一个字段'; sending.value = false; return }; content = JSON.stringify(kv) }
-    else { content = msgText.value.trim(); if (!content && !imgFile.value) { sending.value = false; return } }
+    else { content = msgText.value.trim(); if (!content && !imgFile.value && !mediaFile.value) { sending.value = false; return } }
     const fd = new FormData()
     fd.append('chat_type', apiChatType.value); fd.append('chat_id', current.value.chat_id)
     fd.append('appid', app.currentBotId || current.value.appid || '')
@@ -698,10 +693,13 @@ async function sendMsg() {
       if (quotedMsg.value.message_id) fd.append('quote_message_id', quotedMsg.value.message_id)
     }
     if (imgFile.value && msgType.value === 'text') fd.append('image', imgFile.value)
-    if (msgType.value === 'media') fd.append('media_file_type', mediaFileType.value)
+    if (msgType.value === 'media') {
+      fd.append('media_file_type', mediaFileType.value)
+      if (mediaFile.value) fd.append('media', mediaFile.value)
+    }
     if (msgType.value === 'ark') fd.append('ark_template_id', arkTpl.value)
     const res = await axios.post('/api/message/send', fd)
-    if (res.data?.success) { msgText.value = ''; clearImg(); clearQuote(); if (msgType.value === 'ark') { arkFields.value = {}; arkList.value = '' } }
+    if (res.data?.success) { msgText.value = ''; clearImg(); clearMediaFile(); clearQuote(); if (msgType.value === 'ark') { arkFields.value = {}; arkList.value = '' } }
     else sendErr.value = res.data?.message || '发送失败'
   } catch (e) { sendErr.value = e.response?.data?.message || e.message || '发送失败' }
   finally { sending.value = false }
@@ -713,8 +711,8 @@ let _searchTimer = null
 watch(chatSearch, () => { if (_searchTimer) clearTimeout(_searchTimer); _searchTimer = setTimeout(() => { _searchTimer = null; page.value = 1; fetchChats() }, 300) })
 watch(() => app.currentBotId, () => { current.value = null; quotedMsg.value = null; history.value = []; lastMsgId.value = ''; oldestDate.value = ''; hasMore.value = true; page.value = 1; fetchChats() })
 
-onMounted(() => { fetchChats(); on('new_log', onNewLog); on('open', onWsReconnect); window.addEventListener('resize', handleResize); document.addEventListener('click', closeMobileTypeMenu); document.addEventListener('visibilitychange', onVisibleChange) })
-onUnmounted(() => { _unmounted = true; off('new_log', onNewLog); off('open', onWsReconnect); window.removeEventListener('resize', handleResize); document.removeEventListener('click', closeMobileTypeMenu); document.removeEventListener('visibilitychange', onVisibleChange); if (_fetchTimer) { clearTimeout(_fetchTimer); _fetchTimer = null } })
+onMounted(() => { fetchChats(); on('new_log', onNewLog); on('open', onWsReconnect); window.addEventListener('resize', handleResize); document.addEventListener('visibilitychange', onVisibleChange) })
+onUnmounted(() => { _unmounted = true; off('new_log', onNewLog); off('open', onWsReconnect); window.removeEventListener('resize', handleResize); document.removeEventListener('visibilitychange', onVisibleChange); if (_fetchTimer) { clearTimeout(_fetchTimer); _fetchTimer = null } })
 </script>
 
 <template>
@@ -857,9 +855,19 @@ onUnmounted(() => { _unmounted = true; off('new_log', onNewLog); off('open', onW
               <button class="quote-clear" title="取消引用" @click="clearQuote">×</button>
             </div>
             <div class="send-toolbar">
-              <select v-model="msgType" class="send-type-select"><option value="markdown" :disabled="!!quotedMsg">Markdown{{ quotedMsg ? ' (引用不可用)' : '' }}</option><option value="text">普通消息</option><option value="media">富媒体</option><option value="ark">ARK</option></select>
+              <div class="msg-type-btns">
+                <button v-for="opt in msgTypeOptions" :key="opt.value" type="button" class="msg-type-btn" :class="{ active: msgType === opt.value }" :disabled="opt.value === 'markdown' && !!quotedMsg" :title="opt.value === 'markdown' && quotedMsg ? '引用时不可用' : ''" @click="selectMsgType(opt.value)">{{ opt.label }}</button>
+              </div>
+              <select v-model="sendMode" class="send-type-select send-mode-select" title="发送方式"><option v-for="opt in sendModeOptions" :key="opt.value" :value="opt.value">{{ isMobile ? sendModeShortLabels[opt.value] : opt.label }}</option></select>
               <select v-if="msgType === 'media'" v-model="mediaFileType" class="send-type-select"><option value="1">图片</option><option value="2">视频</option><option value="3">语音</option><option value="4">文件</option></select>
-              <select v-model="sendMode" class="send-type-select" title="发送方式"><option v-for="opt in sendModeOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option></select>
+              <label v-if="msgType === 'media'" class="send-img-label" title="上传文件">
+                <input type="file" :accept="mediaAccept" @change="onMediaSelect" hidden />
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="send-icon"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
+              </label>
+              <span v-if="mediaFile" class="send-img-tag">
+                {{ mediaFile.name }}
+                <span class="send-img-remove" @click="clearMediaFile">×</span>
+              </span>
               <label v-if="msgType === 'text'" class="send-img-label" title="选择图片">
                 <input type="file" accept="image/*" @change="onImgSelect" hidden />
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="send-icon"><rect x="3" y="3" width="18" height="18" rx="3" /><circle cx="8.5" cy="8.5" r="1.5" fill="currentColor" /><path d="M21 15l-5-5L5 21" /></svg>
@@ -873,14 +881,6 @@ onUnmounted(() => { _unmounted = true; off('new_log', onNewLog); off('open', onW
 
             <!-- ARK form -->
             <div v-if="msgType === 'ark'" class="ark-form">
-              <div class="mobile-type-menu ark-mobile-select" @click.stop>
-                <button type="button" class="mobile-type-trigger" @click="mobileTypeOpen = !mobileTypeOpen">
-                  <span>{{ mobileMsgTypeLabel }}</span><span class="mobile-type-caret"></span>
-                </button>
-                <div v-if="mobileTypeOpen" class="mobile-type-options">
-                  <button v-for="opt in msgTypeOptions" :key="opt.value" type="button" :class="{ active: msgType === opt.value }" @click="selectMobileMsgType(opt.value)">{{ opt.label }}</button>
-                </div>
-              </div>
               <div class="ark-grid">
                 <template v-if="arkTpl === '24'">
                   <div class="ark-field"><label>#DESC#</label><input v-model="arkFields['#DESC#']" placeholder="描述" /></div>
@@ -916,34 +916,10 @@ onUnmounted(() => { _unmounted = true; off('new_log', onNewLog); off('open', onW
 
             <!-- Normal send -->
             <div v-if="msgType !== 'ark'" class="send-input-row">
-              <div class="mobile-type-menu" @click.stop>
-                <button type="button" class="mobile-type-trigger" @click="mobileTypeOpen = !mobileTypeOpen">
-                  <span>{{ mobileMsgTypeLabel }}</span><span class="mobile-type-caret"></span>
-                </button>
-                <div v-if="mobileTypeOpen" class="mobile-type-options">
-                  <button v-for="opt in msgTypeOptions" :key="opt.value" type="button" :class="{ active: msgType === opt.value }" :disabled="opt.value === 'markdown' && !!quotedMsg" @click="selectMobileMsgType(opt.value)">{{ opt.label }}</button>
-                </div>
-              </div>
-              <div v-if="msgType === 'media'" class="mobile-type-menu mobile-media-menu" @click.stop>
-                <button type="button" class="mobile-type-trigger" @click="mobileMediaOpen = !mobileMediaOpen">
-                  <span>{{ mobileMediaTypeLabel }}</span><span class="mobile-type-caret"></span>
-                </button>
-                <div v-if="mobileMediaOpen" class="mobile-type-options">
-                  <button v-for="opt in mediaTypeOptions" :key="opt.value" type="button" :class="{ active: mediaFileType === opt.value }" @click="selectMobileMediaType(opt.value)">{{ opt.label }}</button>
-                </div>
-              </div>
-              <div class="mobile-type-menu mobile-sendmode-menu" @click.stop>
-                <button type="button" class="mobile-type-trigger" @click="mobileSendModeOpen = !mobileSendModeOpen">
-                  <span>{{ mobileSendModeLabel }}</span><span class="mobile-type-caret"></span>
-                </button>
-                <div v-if="mobileSendModeOpen" class="mobile-type-options">
-                  <button v-for="opt in sendModeOptions" :key="opt.value" type="button" :class="{ active: sendMode === opt.value }" @click="selectMobileSendMode(opt.value)">{{ sendModeShortLabels[opt.value] }}</button>
-                </div>
-              </div>
               <textarea v-model="msgText" class="send-input" rows="2" :placeholder="placeholder" @keydown="onKeydown" />
               <button class="send-btn" @click="sendMsg" :disabled="sending">{{ sending ? '...' : '发送' }}</button>
             </div>
-            <div v-if="msgType === 'media'" class="send-hint"> 输入资源 URL, 将以富媒体消息 ({{ { '1':'图片','2':'视频','3':'语音','4':'文件' }[mediaFileType] }}) 发送 </div>
+            <div v-if="msgType === 'media'" class="send-hint"> 输入资源 URL 或点击上传文件, 将以富媒体消息 ({{ { '1':'图片','2':'视频','3':'语音','4':'文件' }[mediaFileType] }}) 发送 </div>
             <div v-if="sendErr" class="send-error">{{ sendErr }}</div>
           </div>
         </template>
@@ -1870,7 +1846,41 @@ onUnmounted(() => { _unmounted = true; off('new_log', onNewLog); off('open', onW
   display:flex;
   align-items:center;
   gap:8px;
-  margin-bottom:6px
+  margin-bottom:6px;
+  flex-wrap:wrap
+}
+.msg-type-btns {
+  display:flex;
+  gap:0;
+  border:1px solid var(--border);
+  border-radius:8px;
+  overflow:hidden;
+  background:var(--bg3)
+}
+.msg-type-btn {
+  border:none;
+  background:transparent;
+  color:var(--text2);
+  padding:5px 14px;
+  font-size:12px;
+  white-space:nowrap;
+  cursor:pointer;
+  transition:background .15s,color .15s;
+  border-right:1px solid var(--border)
+}
+.msg-type-btn:last-child {
+  border-right:none
+}
+.msg-type-btn:hover {
+  color:var(--text)
+}
+.msg-type-btn.active {
+  background:var(--accent);
+  color:#fff
+}
+.msg-type-btn:disabled {
+  opacity:.4;
+  cursor:not-allowed
 }
 .send-type-select {
   background:var(--bg3);
@@ -1896,62 +1906,6 @@ onUnmounted(() => { _unmounted = true; off('new_log', onNewLog); off('open', onW
   outline:none;
   flex:1;
   min-width:0
-}
-.mobile-type-select {
-  display:none
-}
-.mobile-type-menu {
-  display:none
-}
-.mobile-type-trigger {
-  height:100%;
-  min-width:48px;
-  border:1px solid var(--border);
-  border-radius:6px;
-  background:var(--bg3);
-  color:var(--text);
-  font-size:12px;
-  cursor:pointer;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  gap:5px
-}
-.mobile-type-caret {
-  width:0;
-  height:0;
-  border-left:4px solid transparent;
-  border-right:4px solid transparent;
-  border-bottom:5px solid currentColor;
-  opacity:.75
-}
-.mobile-type-options {
-  position:absolute;
-  left:0;
-  bottom:calc(100% + 6px);
-  z-index:20;
-  min-width:86px;
-  padding:4px;
-  border:1px solid var(--border);
-  border-radius:8px;
-  background:var(--bg2);
-  box-shadow:0 10px 28px rgba(0,0,0,.25)
-}
-.mobile-type-options button {
-  width:100%;
-  border:0;
-  border-radius:5px;
-  background:transparent;
-  color:var(--text);
-  padding:7px 9px;
-  text-align:left;
-  font-size:12px;
-  cursor:pointer
-}
-.mobile-type-options button:hover,
-.mobile-type-options button.active {
-  background:var(--accent);
-  color:#fff
 }
 .send-img-label {
   cursor:pointer;
@@ -2176,29 +2130,29 @@ onUnmounted(() => { _unmounted = true; off('new_log', onNewLog); off('open', onW
   padding:8px 10px
 }
 .send-toolbar {
-  display:none
+  gap:6px
+}
+.msg-type-btn {
+  padding:6px 0;
+  flex:1
+}
+.msg-type-btns {
+  flex:1 1 auto;
+  min-width:180px;
+  display:flex
+}
+.send-mode-select {
+  max-width:96px;
+  flex-shrink:0
 }
 .send-input-row {
   flex-direction:row;
   align-items:flex-end;
   gap:6px
 }
-.mobile-type-menu {
-  display:block;
-  position:relative;
-  flex-shrink:0;
-  align-self:stretch
-}
 .send-input {
   flex:1;
   min-width:0
-}
-.ark-mobile-select {
-  display:block;
-  position:relative;
-  margin-bottom:6px;
-  width:54px;
-  height:32px
 }
 .send-btn {
   width:auto;
