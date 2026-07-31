@@ -31,9 +31,9 @@ function setMode(m) {
   bottom: 24px;
   z-index: 1000;
   display: inline-flex;
-  background: rgba(255, 255, 255, 0.92);
+  background: var(--bg2, rgba(255, 255, 255, 0.92));
   backdrop-filter: blur(8px);
-  border: 1px solid rgba(0, 0, 0, 0.06);
+  border: 1px solid var(--border, rgba(0, 0, 0, 0.06));
   border-radius: 12px;
   padding: 4px;
   gap: 4px;
@@ -46,7 +46,7 @@ function setMode(m) {
   border-radius: 9px;
   font-size: 13px;
   font-weight: 600;
-  color: #6e6e73;
+  color: var(--text2, #6e6e73);
   cursor: pointer;
   transition: all 0.18s;
   display: inline-flex;
