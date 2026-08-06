@@ -385,7 +385,7 @@ watch([rows, tables, () => tableInfo.value, () => total.value], () => nextTick(r
       </div>
     </n-spin>
     <n-modal v-model:show="mountModal" preset="card" title="挂载数据库" style="width: min(560px, 92vw)" :style="{ background: 'var(--bg2)' }">
-      <div class="text-xs mb-2" style="color:var(--text3)">浏览框架目录, 选择要挂载的 .db 文件 (挂载后永久保留在左侧列表)</div>
+      <div class="text-xs mb-2" style="color:var(--text3)">浏览框架目录, 选择要挂载的 SQLite 数据库文件 (.db / .sqlite / .sqlite3 等)</div>
       <div class="flex items-center gap-2 mb-2">
         <n-button size="tiny" quaternary :disabled="!browseDir" @click="goUp">上级目录</n-button>
         <span class="text-xs font-mono truncate" style="color:var(--text2)">/{{ browseDir }}</span>
@@ -401,7 +401,7 @@ watch([rows, tables, () => tableInfo.value, () => total.value], () => nextTick(r
               <n-button size="tiny" type="primary" secondary :loading="mounting" @click.stop="mountDb(item.path)">挂载</n-button>
             </div>
           </div>
-          <n-empty v-if="!browseItems.length && !browsing" description="此目录下没有文件夹或 .db 文件" size="small" class="py-4" />
+          <n-empty v-if="!browseItems.length && !browsing" description="此目录下没有文件夹或 SQLite 数据库文件" size="small" class="py-4" />
         </div>
       </n-spin>
     </n-modal>
