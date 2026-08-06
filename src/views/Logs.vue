@@ -57,7 +57,7 @@ function consoleLevel(e) {
 const CONSOLE_CLASS = { DEBUG: 'c-dim', WARNING: 'c-warn', ERROR: 'c-err', CRITICAL: 'c-crit' }
 function consoleClass(e) { return CONSOLE_CLASS[consoleLevel(e)] || '' }
 
-const LC_LABELS = { group_add:'入群', group_del:'退群', group_member_add:'用户入群', group_member_del:'用户退群', friend_add:'加好友', friend_del:'删好友', group_msg_reject:'关闭主动消息', group_msg_receive:'开启主动消息', subscribe_status:'订阅开启', subscribe_close:'订阅关闭', MESSAGE_REACTION_ADD:'表态', MESSAGE_REACTION_REMOVE:'取消表态', GUILD_UPDATE:'频道更新' }
+const LC_LABELS = { group_add:'入群', group_del:'退群', group_member_add:'用户入群', group_member_del:'用户退群', group_join_request:'入群申请', friend_add:'加好友', friend_del:'删好友', group_msg_reject:'关闭主动消息', group_msg_receive:'开启主动消息', subscribe_status:'订阅开启', subscribe_close:'订阅关闭', MESSAGE_REACTION_ADD:'表态', MESSAGE_REACTION_REMOVE:'取消表态', GUILD_UPDATE:'频道更新' }
 function lcTag(e) {
   let t = e.event_type || e.type || ''
   // 订阅事件根据 result[].op 区分开启(1)/关闭(2)
@@ -435,7 +435,8 @@ onUnmounted(() => { off('new_log', onNewLog); off('init', onInit); if (flushTime
   color:#b71c1c;
   background:#ffebee
 }
-.t-lc-group_member_add {
+.t-lc-group_member_add,
+.t-lc-group_join_request {
   color:#00695c;
   background:#e0f2f1
 }
