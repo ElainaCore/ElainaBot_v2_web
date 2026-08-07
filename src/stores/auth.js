@@ -2,13 +2,13 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import axios from '../utils/axios'
 import { responseMessage, responsePayload, responseOk } from '../utils/api'
-import { clearAuthToken, getAuthToken, setAuthToken } from '../utils/authToken'
 
-const WEAK_PASSWORDS = new Set(['admin', '123456', 'password', 'admin123', '12345678'])
+localStorage.removeItem('elaina_token')
 
 export const useAuthStore = defineStore('auth', () => {
-  const token = ref(getAuthToken())
-  const isLoggedIn = computed(() => !!token.value)
+  const loggedIn = ref(false)
+  const checked = ref(false)
+  const isLoggedIn = computed(() => loggedIn.value)
   const isWeakPassword = ref(localStorage.getItem('elaina_weak_pwd') === '1')
 
   async function login(password) {
@@ -16,9 +16,9 @@ export const useAuthStore = defineStore('auth', () => {
       const res = await axios.post('/api/auth/login', { password })
       const data = responsePayload(res)
       if (responseOk(res)) {
-        token.value = setAuthToken(data?.token)
-        if (!token.value) throw new Error('登录响应缺少有效令牌')
-        setWeakPassword(WEAK_PASSWORDS.has(password))
+        loggedIn.value = true
+        checked.value = true
+        setWeakPassword(!!data?.is_weak)
         return true
       }
       throw new Error(responseMessage(res, '登录失败'))
@@ -35,23 +35,22 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   function logout() {
-    const current = token.value
-    token.value = ''
-    clearAuthToken()
+    loggedIn.value = false
+    checked.value = true
     localStorage.removeItem('elaina_weak_pwd')
     isWeakPassword.value = false
-    axios.post('/api/auth/logout', null, { headers: current ? { Authorization: `Bearer ${current}` } : {} }).catch(() => {})
+    axios.post('/api/auth/logout').catch(() => {})
   }
 
   async function checkSession() {
-    if (!token.value) return false
     try {
-      return responseOk(await axios.get('/api/auth/check'))
+      loggedIn.value = responseOk(await axios.get('/api/auth/check'))
     } catch {
-      logout()
-      return false
+      loggedIn.value = false
     }
+    checked.value = true
+    return loggedIn.value
   }
 
-  return { token, isLoggedIn, isWeakPassword, setWeakPassword, login, logout, checkSession }
+  return { checked, isLoggedIn, isWeakPassword, setWeakPassword, login, logout, checkSession }
 })
