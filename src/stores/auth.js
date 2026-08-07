@@ -35,10 +35,12 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   function logout() {
+    const current = token.value
     token.value = ''
     clearAuthToken()
     localStorage.removeItem('elaina_weak_pwd')
     isWeakPassword.value = false
+    axios.post('/api/auth/logout', null, { headers: current ? { Authorization: `Bearer ${current}` } : {} }).catch(() => {})
   }
 
   async function checkSession() {

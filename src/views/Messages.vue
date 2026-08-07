@@ -16,6 +16,8 @@ const chatSearch = ref('')
 const chats = ref([])
 const page = ref(1)
 const total = ref(0)
+const chatsLoading = ref(false)
+const chatsError = ref('')
 const current = ref(null)
 const history = ref([])
 const historyRef = ref(null)
@@ -406,14 +408,23 @@ function buildArkKv() {
 }
 
 let _fetchTimer = null
+let _chatRequestId = 0
 async function fetchChats() {
   if (_unmounted) return
+  const requestId = ++_chatRequestId
+  chatsLoading.value = true
+  chatsError.value = ''
   try {
     const res = await axios.post('/api/message/chats', { type: chatType.value, search: chatSearch.value, appid: app.currentBotId || '', page: page.value, page_size: PAGE })
-    if (_unmounted) return
+    if (_unmounted || requestId !== _chatRequestId) return
     chats.value = res.data?.data?.chats || []
     total.value = res.data?.data?.total || chats.value.length
-  } catch { if (!_unmounted) { chats.value = []; total.value = 0 } }
+    page.value = res.data?.data?.page || 1
+  } catch {
+    if (!_unmounted && requestId === _chatRequestId) chatsError.value = '聊天列表加载失败'
+  } finally {
+    if (!_unmounted && requestId === _chatRequestId) chatsLoading.value = false
+  }
 }
 
 function memberInfo(uid) { return groupRoles.value[uid] || {} }
@@ -762,7 +773,9 @@ onUnmounted(() => { _unmounted = true; off('new_log', onNewLog); off('open', onW
               <button v-if="chatType !== 'user'" class="remark-btn" title="备注" @click.stop="startRemark(c)">✎</button>
             </div>
           </div>
-          <div v-if="!chats.length" class="chat-empty">暂无聊天</div>
+          <div v-if="chatsLoading && !chats.length" class="chat-empty">正在加载...</div>
+          <div v-else-if="chatsError && !chats.length" class="chat-empty">{{ chatsError }}</div>
+          <div v-else-if="!chats.length" class="chat-empty">暂无聊天</div>
         </div>
         <div v-if="total > PAGE" class="chat-pager">
           <button :disabled="page <= 1" @click="page--; fetchChats()">&lt;</button>

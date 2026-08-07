@@ -140,7 +140,7 @@ function addBot() {
   const d = parse(raw.bot)
   if (!Array.isArray(d.bots)) d.bots = []
   d.bots.push({
-    appid: '', secret: '', robot_qq: '', owner_ids: [],
+    appid: '', secret: '', api_version: 'new', robot_qq: '', owner_ids: [],
     websocket: { enabled: true, custom_url: '', reconnect_interval: 5, max_reconnects: -1, log_level: 'INFO', identify: { name: '' } },
     message: { use_markdown: true, markdown_suffix: '', button_enter_to_send: false, send_default_response: false, default_response_excluded_regex: [] },
     identity: { use_union_id_for_group: false, use_union_id_for_channel: false },
@@ -354,6 +354,7 @@ onUnmounted(stopQrBindPoll)
             <div class="vis-grid">
               <div class="vis-field"><label>AppID</label><input :value="currentBot.appid" @input="updateBotField(botIndex, 'appid', $event)" /></div>
               <div class="vis-field"><label>Secret</label><input :value="currentBot.secret" @input="updateBotField(botIndex, 'secret', $event)" type="password" /></div>
+              <div class="vis-field"><label>QQ API 接口</label><select :value="currentBot.api_version || 'new'" @change="updateBotField(botIndex, 'api_version', $event)"><option value="new">新接口 (api.bot.qq.com，默认)</option><option value="old">旧接口 (bots.qq.com / api.sgroup.qq.com)</option></select></div>
               <div class="vis-field"><label>机器人QQ</label><input :value="currentBot.robot_qq" @input="updateBotField(botIndex, 'robot_qq', $event)" /></div>
               <div class="vis-field"><label>主人 OpenID</label><input :value="(currentBot.owner_ids||[]).join(',')" @input="updateBotField(botIndex, 'owner_ids', $event)" placeholder="逗号分隔" /></div>
             </div>

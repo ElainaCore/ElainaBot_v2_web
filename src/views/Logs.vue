@@ -85,6 +85,7 @@ const currentLogs = computed(() =>
 let seq = 0
 function withId(e) { e._id = ++seq; return e }
 function trim(list) { return (Array.isArray(list) ? list.slice(-MAX) : []).map(withId) }
+const logTargets = { message: messages, lifecycle, framework, console: consoles, error: errors }
 
 let pendingLogs = []
 let flushTimer = null
@@ -93,31 +94,33 @@ function flushLogs() {
   const batch = pendingLogs
   pendingLogs = []
   for (const { type, entry } of batch) {
-    const arr = type === 'message' ? messages : type === 'framework' ? framework : type === 'console' ? consoles : (type === 'lifecycle' || type === 'event') ? lifecycle : errors
+    const arr = logTargets[type]
     arr.value.push(withId(entry))
     if (arr.value.length > MAX) arr.value.splice(0, arr.value.length - MAX)
   }
 }
 function pushLog(type, entry) {
+  if (!logTargets[type]) return
   pendingLogs.push({ type, entry })
   if (pendingLogs.length > MAX * 2) pendingLogs.splice(0, pendingLogs.length - MAX * 2)
   if (!flushTimer) flushTimer = setTimeout(flushLogs, 50)
 }
-function onNewLog(data) { if (!data) return; const t = data.log_type || 'message'; const e = { ...data }; delete e.log_type; pushLog(t, e) }
-function onInit() { if (!messages.value.length) fetchLogs() }
+function onNewLog(data) { if (!data) return; const t = data.log_type === 'event' ? 'lifecycle' : data.log_type || 'message'; const e = { ...data }; delete e.log_type; pushLog(t, e) }
 function clearAll() { messages.value = []; framework.value = []; errors.value = []; lifecycle.value = []; logins.value = []; consoles.value = []; expandedRaw.value = {}; expandedErr.value = {}; expandedMsg.value = {} }
 
-async function fetchLogs() {
-  try {
-    const data = responsePayload(await axios.get('/api/logs/recent'))
-    if (data.message) messages.value = trim(data.message)
-    if (data.framework) framework.value = trim(data.framework)
-    if (data.error) errors.value = trim(data.error)
-    if (data.lifecycle) lifecycle.value = trim(data.lifecycle)
-    if (data.console) consoles.value = trim(data.console)
-  } catch {}
-  fetchLoginLogs()
+function setInitial(target, rows, startId) {
+  if (!rows) return
+  const live = target.value.filter(e => e._id > startId)
+  target.value = [...trim(rows), ...live].slice(-MAX)
 }
+async function fetchRecent(type) {
+  const startId = seq
+  try {
+    const data = responsePayload(await axios.get(`/api/logs/recent?type=${type}`))
+    setInitial(logTargets[type], data[type], startId)
+  } catch {}
+}
+function fetchLogs() { Promise.allSettled([...Object.keys(logTargets).map(fetchRecent), fetchLoginLogs()]) }
 async function fetchLoginLogs() {
   try {
     const data = responsePayload(await axios.get('/api/logs/login'))
@@ -129,8 +132,8 @@ watch(() => [currentLogs.value.length, currentLogs.value[currentLogs.value.lengt
   if (autoScroll.value) { await nextTick(); const el = logContainer.value; if (el) el.scrollTop = el.scrollHeight }
 })
 
-onMounted(() => { fetchLogs(); on('new_log', onNewLog); on('init', onInit) })
-onUnmounted(() => { off('new_log', onNewLog); off('init', onInit); if (flushTimer) { clearTimeout(flushTimer); flushTimer = null }; pendingLogs = [] })
+onMounted(() => { fetchLogs(); on('new_log', onNewLog) })
+onUnmounted(() => { off('new_log', onNewLog); if (flushTimer) { clearTimeout(flushTimer); flushTimer = null }; pendingLogs = [] })
 </script>
 
 <template>

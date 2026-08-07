@@ -1,5 +1,3 @@
-import { getAuthToken } from './authToken'
-
 let ws = null
 let sse = null
 let listeners = {}
@@ -32,9 +30,8 @@ export function off(event, handler) {
 
 function connectWS() {
   if (ws && ws.readyState <= 1) return
-  const token = getAuthToken()
   const proto = location.protocol === 'https:' ? 'wss' : 'ws'
-  const url = `${proto}://${location.host}/ws/panel?token=${token || ''}`
+  const url = `${proto}://${location.host}/ws/panel`
 
   ws = new WebSocket(url)
   // 收到消息才算连接可用: 部分代理握手成功但无法传输帧, 避免 onopen 误清失败计数导致无法回退 SSE
@@ -46,8 +43,7 @@ function connectWS() {
 
 function connectSSE() {
   if (sse && sse.readyState <= 1) return
-  const token = getAuthToken()
-  const url = `${location.origin}/api/sse/panel?token=${token || ''}`
+  const url = `${location.origin}/api/sse/panel`
 
   sse = new EventSource(url)
   sse.onopen = () => { emit('open'); clearReconnect() }
