@@ -27,6 +27,7 @@ const ICONS = {
   people: '<circle cx="9" cy="8" r="3.2"/><path d="M3.5 19.5c0-3 2.5-5 5.5-5s5.5 2 5.5 5"/><circle cx="16.5" cy="9" r="2.4"/><path d="M16.5 14.5c2.6 0 4.5 1.8 4.5 4.2"/><path d="M19.5 3l.4 1 1 .4-1 .4-.4 1-.4-1-1-.4 1-.4z" fill="currentColor" stroke="none"/>',
   upload: '<path d="M7 17.5a4 4 0 01-.7-7.9A5.5 5.5 0 0117 8.1a4.2 4.2 0 01-.2 8.4"/><path d="M12 20v-8"/><path d="M9 14.5l3-3 3 3"/><path d="M19.5 3.5l.5 1.2 1.2.5-1.2.5-.5 1.2-.5-1.2-1.2-.5 1.2-.5z" fill="currentColor" stroke="none"/>',
   code: '<path d="M8 7l-4.5 5L8 17"/><path d="M16 7l4.5 5L16 17"/><path d="M13.3 4.5l-2.6 15"/>',
+  'open-outline': '<path d="M13 5h6v6"/><path d="M19 5l-9 9"/><path d="M17 13v5.5a1.5 1.5 0 01-1.5 1.5h-10A1.5 1.5 0 014 18.5v-10A1.5 1.5 0 015.5 7H11"/>',
   plus: '<circle cx="12" cy="12" r="8.5" stroke-dasharray="1.5 3.5"/><path d="M12 8.5v7M8.5 12h7"/>',
   trash: '<path d="M4.5 6.5h15"/><path d="M8.5 6.5V5A1.5 1.5 0 0110 3.5h4A1.5 1.5 0 0115.5 5v1.5"/><path d="M6.5 6.5l.9 12.1a2 2 0 002 1.9h5.2a2 2 0 002-1.9l.9-12.1"/><path d="M10 10.5v6M14 10.5v6"/>',
   eye: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/><path d="M12 10.8l.35.85.85.35-.85.35-.35.85-.35-.85-.85-.35.85-.35z" fill="currentColor" stroke="none"/>',

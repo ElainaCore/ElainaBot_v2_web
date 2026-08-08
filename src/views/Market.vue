@@ -4,6 +4,8 @@ import { useMessage } from 'naive-ui'
 import axios from '../utils/axios'
 import { formatFileSize, urlHost } from '../utils/format'
 import SvgIcon from '../components/SvgIcon.vue'
+import { marked } from 'marked'
+import DOMPurify from 'dompurify'
 
 const msg = useMessage()
 const items = ref([])
@@ -12,7 +14,39 @@ const category = ref('')
 const type = ref('complete')
 const loading = ref(false)
 const error = ref('')
-const preview = reactive({ show: false, name: '', type: '', content: '', files: [], loading: false, error: '' })
+const preview = reactive({ show: false, name: '', github: '', branch: 'main', files: [], selected: '', loading: false, error: '' })
+const selectedPreviewFile = computed(() => preview.files.find(file => file.path === preview.selected) || preview.files[0] || null)
+function resolveMarkdownImageUrl(src) {
+  const value = String(src || '').trim()
+  if (!value || value.startsWith('data:') || value.startsWith('blob:')) return value
+  if (/^[a-z][a-zd+.-]*:/i.test(value) && !/^https?:/i.test(value)) return ''
+
+  const blobMatch = value.match(/^https?:\/\/github\.com\/([^/]+)\/([^/]+?)\/blob\/([^/]+)\/(.+)$/i)
+  if (blobMatch) {
+    const [, owner, repo, branch, path] = blobMatch
+    return `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${path}`
+  }
+  if (/^(?:https?:)?\/\//i.test(value)) return value
+
+  const repoMatch = preview.github.match(/^https?:\/\/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?(?:\/|$)/i)
+  if (!repoMatch) return value
+  const [, owner, repo] = repoMatch
+  const filePath = selectedPreviewFile.value?.path || ''
+  const directory = filePath.includes('/') ? filePath.slice(0, filePath.lastIndexOf('/') + 1) : ''
+  const base = `https://raw.githubusercontent.com/${owner}/${repo}/${preview.branch}/${directory}`
+  try { return new URL(value, base).href } catch { return value }
+}
+const previewHtml = computed(() => {
+  const content = selectedPreviewFile.value?.content || ''
+  if (!content) return ''
+  const doc = new DOMParser().parseFromString(DOMPurify.sanitize(marked.parse(content)), 'text/html')
+  doc.querySelectorAll('img[src]').forEach(img => {
+    img.src = resolveMarkdownImageUrl(img.getAttribute('src'))
+    img.loading = 'lazy'
+    img.referrerPolicy = 'no-referrer'
+  })
+  return DOMPurify.sanitize(doc.body.innerHTML)
+})
 function normType(i) { const t = (i.type || '').toLowerCase(); if (t === 'module') return 'module'; if (t === 'single' || t === 'standalone' || t === 'alone') return 'single'; return 'complete' }
 const isModule = computed(() => type.value === 'module')
 
@@ -110,11 +144,15 @@ async function refresh() {
 }
 
 async function previewItem(item) {
-  let url = item.path ? '' : item.github || item.download_url || ''
-  if (item.path && item.github) { const m = item.github.match(/github\.com\/([^/]+)\/([^/]+)/); if (m) url = `https://raw.githubusercontent.com/${m[1]}/${m[2]}/${item.branch || 'main'}/${item.path}` }
-  if (!url) { msg.warning('无可预览地址'); return }
-  Object.assign(preview, { show: true, name: item.name, type: '', content: '', files: [], loading: true, error: '' })
-  try { const res = await axios.post('/api/market/preview', { url }); if (res.data.success) { preview.type = res.data.type || 'py'; res.data.files ? preview.files = res.data.files : preview.content = res.data.content || '' } else preview.error = res.data.message || '预览失败' }
+  if (!item.github) { msg.warning('无可预览仓库'); return }
+  Object.assign(preview, { show: true, name: item.name, github: item.github, branch: item.branch || 'main', files: [], selected: '', loading: true, error: '' })
+  try {
+    const res = await axios.post('/api/market/preview', { github: item.github, branch: item.branch || 'main', path: item.path || '' })
+    if (res.data.success) {
+      preview.files = res.data.files || []
+      preview.selected = preview.files[0]?.path || ''
+    } else preview.error = res.data.message || '预览失败'
+  }
   catch { preview.error = '预览请求失败' }
   finally { preview.loading = false }
 }
@@ -201,7 +239,7 @@ onUnmounted(() => { mirrorTestSource?.close() })
             <a v-if="item.github" :href="item.github" target="_blank" class="m-link" title="GitHub"><SvgIcon name="globe" :size="14" /><span>仓库</span></a>
             <template v-if="!isModule"><span v-if="item._type === 'single'" class="m-type-badge" :title="item.alone === false ? '独立文件夹 plugins/' + item.name + '/' : '共享 plugins/alone/'">独立</span><span v-else class="m-type-badge repo">完整</span></template>
             <div class="m-card-btns">
-              <button v-if="!isModule && (item.path || item.github)" class="m-btn sm preview" @click="previewItem(item)" :disabled="item._previewing"><SvgIcon name="code" :size="13" /> 预览</button>
+              <button v-if="item.github" class="m-btn sm preview" @click="previewItem(item)" :disabled="item._previewing"><SvgIcon name="document-text" :size="13" /> 文档</button>
               <button v-if="item.installed" class="m-btn sm uninstall" @click="uninstall(item)" :disabled="item._uninstalling || (!isModule && item.name === 'system')"><SvgIcon name="trash" :size="13" /> {{ item._uninstalling ? '卸载中...' : '卸载' }}</button>
               <button :class="['m-btn sm install', { update: item.has_update }]" @click="install(item)" :disabled="item._installing"><SvgIcon name="cloud-download" :size="13" /> {{ item._installing ? '安装中...' : item.has_update ? '更新' : item.installed ? '重装' : '安装' }}</button>
             </div>
@@ -214,19 +252,19 @@ onUnmounted(() => { mirrorTestSource?.close() })
     <div v-if="preview.show" class="m-modal-overlay" @click.self="preview.show = false">
       <div class="m-modal">
         <div class="m-modal-head">
-          <div class="m-modal-title"><SvgIcon name="code" :size="16" /><span>{{ preview.name }}</span><span v-if="preview.type" class="m-tag">{{ preview.type }}</span></div>
-          <button class="m-btn sm close" @click="preview.show = false"><SvgIcon name="x" :size="14" /></button>
+          <div class="m-modal-title"><SvgIcon name="document-text" :size="16" /><span>{{ preview.name }}</span></div>
+          <div class="m-modal-actions">
+            <select v-if="preview.files.length" v-model="preview.selected" class="m-select m-md-select" aria-label="选择 Markdown 文档">
+              <option v-for="file in preview.files" :key="file.path" :value="file.path">{{ file.name }}</option>
+            </select>
+            <span v-if="selectedPreviewFile?.size" class="m-preview-size">{{ formatFileSize(selectedPreviewFile.size) }}</span>
+            <button class="m-btn sm close" title="关闭" @click="preview.show = false"><SvgIcon name="x" :size="14" /></button>
+          </div>
         </div>
         <div class="m-modal-body">
           <div v-if="preview.loading" class="m-state" style="padding:40px 0"><div class="m-spinner" /><span>加载中...</span></div>
-          <template v-else-if="preview.files?.length">
-            <div v-for="f in preview.files" :key="f.name" class="m-preview-file">
-              <div class="m-preview-fname">{{ f.name }} <span class="m-preview-size">{{ f.size ? formatFileSize(f.size) : '' }}</span></div>
-              <pre class="m-preview-code">{{ f.content }}</pre>
-            </div>
-          </template>
-          <pre v-else-if="preview.content" class="m-preview-code">{{ preview.content }}</pre>
-          <div v-else class="m-state" style="padding:40px 0"><span>{{ preview.error || '无法预览' }}</span></div>
+          <article v-else-if="previewHtml" class="m-preview-markdown" v-html="previewHtml" />
+          <div v-else class="m-state" style="padding:40px 0"><span>{{ preview.error || '当前目录没有 Markdown 文档' }}</span></div>
         </div>
       </div>
     </div>
@@ -683,43 +721,51 @@ onUnmounted(() => { mirrorTestSource?.close() })
   font-weight:600;
   color:var(--text)
 }
+.m-modal-actions {
+  display:flex;
+  align-items:center;
+  gap:8px;
+  min-width:0
+}
+.m-md-select {
+  max-width:260px
+}
 .m-modal-body {
   flex:1;
   overflow-y:auto;
   padding:12px
 }
-.m-preview-file {
-  margin-bottom:12px
-}
-.m-preview-fname {
-  font-size:12px;
-  font-weight:600;
-  color:var(--accent);
-  padding:4px 0;
-  font-family:Cascadia Code,Fira Code,monospace
-}
 .m-preview-size {
   font-size:10px;
   color:var(--text3);
   font-weight:400;
-  margin-left:8px
+  white-space:nowrap
 }
-.m-preview-code {
-  background:#1a1a2e;
-  color:#e0e0e0;
-  border:1px solid rgba(255,255,255,.06);
-  border-radius:8px;
-  padding:12px 14px;
-  font-size:12px;
-  line-height:1.6;
-  font-family:Cascadia Code,Fira Code,Consolas,monospace;
-  overflow-x:auto;
-  white-space:pre;
-  -moz-tab-size:4;
-  -o-tab-size:4;
-  tab-size:4;
-  margin:0
+.m-preview-markdown {
+  max-width:820px;
+  margin:0 auto;
+  color:var(--text);
+  font-size:14px;
+  line-height:1.75;
+  overflow-wrap:anywhere
 }
+.m-preview-markdown :deep(h1), .m-preview-markdown :deep(h2), .m-preview-markdown :deep(h3) {
+  margin:1.25em 0 .55em;
+  line-height:1.3
+}
+.m-preview-markdown :deep(h1) { font-size:24px }
+.m-preview-markdown :deep(h2) { font-size:20px; border-bottom:1px solid var(--border); padding-bottom:6px }
+.m-preview-markdown :deep(h3) { font-size:16px }
+.m-preview-markdown :deep(p), .m-preview-markdown :deep(ul), .m-preview-markdown :deep(ol) { margin:.7em 0 }
+.m-preview-markdown :deep(a) { color:var(--accent) }
+.m-preview-markdown :deep(img) { max-width:100%; height:auto }
+.m-preview-markdown :deep(blockquote) { margin:1em 0; padding:2px 14px; border-left:3px solid var(--accent); color:var(--text2) }
+.m-preview-markdown :deep(pre) { overflow:auto; padding:12px 14px; border:1px solid var(--border); border-radius:6px; background:#1a1a2e; color:#e0e0e0 }
+.m-preview-markdown :deep(code) { font-family:Cascadia Code,Fira Code,Consolas,monospace }
+.m-preview-markdown :deep(:not(pre)>code) { padding:2px 5px; border-radius:4px; background:var(--bg2) }
+.m-preview-markdown :deep(table) { display:block; width:100%; overflow:auto; border-collapse:collapse }
+.m-preview-markdown :deep(th), .m-preview-markdown :deep(td) { padding:6px 10px; border:1px solid var(--border) }
+.m-preview-markdown :deep(hr) { border:0; border-top:1px solid var(--border); margin:20px 0 }
 @media(max-width:767px) {
   .market-toolbar {
   flex-direction:column;
@@ -732,5 +778,8 @@ onUnmounted(() => { mirrorTestSource?.close() })
   width:96vw;
   height:85vh
 }
+.m-modal-head { align-items:flex-start }
+.m-modal-actions { max-width:60% }
+.m-md-select { max-width:100% }
 }
 </style>

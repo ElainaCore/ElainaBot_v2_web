@@ -613,7 +613,7 @@ onUnmounted(() => {
 .nav-divider {
   font-size:11px;
   color:var(--text3);
-  padding:12px 16px 4px;
+  padding:3px 16px 4px;
   text-transform:uppercase;
   letter-spacing:.5px;
   font-weight:600
