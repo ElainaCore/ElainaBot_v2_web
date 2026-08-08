@@ -1,5 +1,5 @@
 <script setup>
-import { ref, reactive, computed, watch, onMounted } from 'vue'
+import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useMessage } from 'naive-ui'
 import axios from '../utils/axios'
 import { formatFileSize, urlHost } from '../utils/format'
@@ -20,7 +20,8 @@ const mirrorShow = ref(false)
 const mirrorList = ref([])
 const fastMirrors = ref([])
 const selectedMirror = ref('')
-const mirrorTesting = ref('')
+const mirrorTesting = ref(false)
+let mirrorTestSource = null
 
 function mirrorLabel(m) { return urlHost(m, '直连 GitHub').slice(0, 30) }
 function mirrorLatency(m) {
@@ -31,11 +32,12 @@ function mirrorLatency(m) {
 }
 async function fetchMirror() {
   try {
-    const res = await axios.get('/api/market/mirror')
+    const res = await axios.get('/api/update/mirrors')
     if (res.data.success) {
-      mirrorList.value = res.data.mirrors || []
-      fastMirrors.value = res.data.fast_mirrors || []
-      selectedMirror.value = res.data.mirror || ''
+      const data = res.data.data || {}
+      mirrorList.value = data.mirrors || []
+      fastMirrors.value = data.fast_mirrors || []
+      selectedMirror.value = data.custom_mirror || ''
     }
   } catch {}
 }
@@ -43,22 +45,37 @@ async function setMirror(m) {
   selectedMirror.value = m
   mirrorShow.value = false
   try {
-    await axios.post('/api/market/mirror', { mirror: m })
+    await axios.post('/api/update/mirror', { mirror: m })
     msg.success(`镜像已设为: ${mirrorLabel(m)}`)
-  } catch { msg.error('设置镜像失败') }
+  } catch {
+    msg.error('设置镜像失败')
+    await fetchMirror()
+  }
 }
-async function testMirror(m) {
-  mirrorTesting.value = m
-  try {
-    const res = await axios.post('/api/market/mirror/test', { mirror: m })
-    if (res.data.success && res.data.data) {
-      const r = res.data.data
-      const idx = fastMirrors.value.findIndex(x => (typeof x === 'string' ? x : x.mirror) === m)
-      if (idx >= 0) fastMirrors.value[idx] = r; else fastMirrors.value.push(r)
-      msg.info(`${mirrorLabel(m)}: ${r.success ? (r.latency * 1000).toFixed(0) + 'ms' : '不可用'}`)
-    }
-  } catch { msg.error('测试失败') }
-  finally { mirrorTesting.value = '' }
+function testMirrors() {
+  if (mirrorTesting.value) return
+  mirrorTesting.value = true
+  fastMirrors.value = []
+  mirrorTestSource = new EventSource('/api/update/test-mirrors')
+  mirrorTestSource.onmessage = event => {
+    try {
+      const result = JSON.parse(event.data)
+      if (result.done) {
+        mirrorTestSource?.close()
+        mirrorTestSource = null
+        mirrorTesting.value = false
+        msg.success('镜像测速完成')
+        return
+      }
+      fastMirrors.value.push(result)
+    } catch {}
+  }
+  mirrorTestSource.onerror = () => {
+    mirrorTestSource?.close()
+    mirrorTestSource = null
+    mirrorTesting.value = false
+    msg.error('镜像测速中断')
+  }
 }
 
 watch(type, () => { category.value = '' })
@@ -104,7 +121,7 @@ async function previewItem(item) {
 
 async function install(item) {
   if (item._installing) return; item._installing = true
-  try { const res = await axios.post('/api/market/install', { name: item.name, type: item._type, github: item.github || '', url: item.download_url || '', path: item.path || '', alone: item.alone !== false, branch: item.branch || 'main', mirror: selectedMirror.value }); if (res.data.success) { msg.success(res.data.message || `${item.name} 安装成功`); await fetchList() } else msg.error(res.data.message || '安装失败') }
+  try { const res = await axios.post('/api/market/install', { name: item.name, type: item._type, github: item.github || '', url: item.download_url || '', path: item.path || '', alone: item.alone !== false, branch: item.branch || 'main' }); if (res.data.success) { msg.success(res.data.message || `${item.name} 安装成功`); await fetchList() } else msg.error(res.data.message || '安装失败') }
   catch { msg.error('安装请求失败') }
   finally { item._installing = false }
 }
@@ -117,6 +134,7 @@ async function uninstall(item) {
 }
 
 onMounted(() => { fetchList(); fetchMirror() })
+onUnmounted(() => { mirrorTestSource?.close() })
 </script>
 
 <template>
@@ -136,7 +154,10 @@ onMounted(() => { fetchList(); fetchMirror() })
           </button>
           <div v-if="mirrorShow" class="m-mirror-backdrop" @click="mirrorShow = false"></div>
           <div v-if="mirrorShow" class="m-mirror-dropdown">
-            <div class="m-mirror-title">选择下载镜像</div>
+            <div class="m-mirror-title">
+              <span>GitHub 镜像（框架更新与插件市场共用）</span>
+              <button class="m-mirror-test-all" @click.stop="testMirrors" :disabled="mirrorTesting">{{ mirrorTesting ? '测速中...' : '一键测速' }}</button>
+            </div>
             <div :class="['m-mirror-item', { active: selectedMirror === '' }]" @click="setMirror('')">
               <span class="m-mirror-name">自动选择</span>
               <span class="m-mirror-ms">{{ mirrorLatency('') }}</span>
@@ -144,7 +165,6 @@ onMounted(() => { fetchList(); fetchMirror() })
             <div v-for="m in mirrorList" :key="m" :class="['m-mirror-item', { active: selectedMirror === m }]">
               <span class="m-mirror-name" @click="setMirror(m)">{{ mirrorLabel(m) }}</span>
               <span class="m-mirror-ms" @click="setMirror(m)">{{ mirrorLatency(m) }}</span>
-              <button class="m-mirror-test" @click.stop="testMirror(m)" :disabled="mirrorTesting === m">{{ mirrorTesting === m ? '...' : '测试' }}</button>
             </div>
           </div>
         </div>
@@ -560,12 +580,15 @@ onMounted(() => { fetchList(); fetchMirror() })
   padding:6px 0
 }
 .m-mirror-title {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
   font-size:11px;
   font-weight:600;
   color:var(--text3);
   padding:6px 12px 4px;
-  text-transform:uppercase;
-  letter-spacing:.5px
+  letter-spacing:0
 }
 .m-mirror-item {
   display:flex;
@@ -602,9 +625,9 @@ onMounted(() => { fetchList(); fetchMirror() })
   font-family:monospace;
   flex-shrink:0
 }
-.m-mirror-test {
+.m-mirror-test-all {
   font-size:10px;
-  padding:1px 6px;
+  padding:2px 7px;
   border:1px solid var(--border);
   border-radius:4px;
   background:transparent;
@@ -613,11 +636,11 @@ onMounted(() => { fetchList(); fetchMirror() })
   flex-shrink:0;
   transition:all .15s
 }
-.m-mirror-test:hover {
+.m-mirror-test-all:hover {
   color:var(--accent);
   border-color:var(--accent)
 }
-.m-mirror-test:disabled {
+.m-mirror-test-all:disabled {
   opacity:.4;
   cursor:default
 }
