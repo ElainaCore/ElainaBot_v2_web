@@ -76,6 +76,9 @@ const addRemarkModalVisible = ref(false)
 const addRemarkOpenid = ref('')
 const addRemarkName = ref('')
 const addRemarkQq = ref('')
+const refreshingGroup = ref('')
+const refreshingPage = ref(false)
+const groupRefreshError = ref('')
 const placeholder = computed(() => msgType.value === 'markdown' ? '输入 Markdown 内容...' : msgType.value === 'media' ? '输入资源 URL 或上传文件...' : '输入消息内容...')
 const quotedPreview = computed(() => quotedMsg.value ? buildQuotePreview(quotedMsg.value) : '')
 const olderBtnLabel = computed(() => {
@@ -117,6 +120,11 @@ function onBubbleClick(e) {
 }
 function shortTime(t) { return t ? (t.length > 10 ? t.slice(11, 16) : t) : '' }
 function stripYear(t) { if (!t) return ''; const m = t.match(/^\d{4}-(\d{2}-\d{2}\s+\d{2}:\d{2}(:\d{2})?)$/); return m ? m[1] : t }
+function chatDisplayName(chat) {
+  if (!chat) return ''
+  if (chatType.value === 'user') return chat.nickname || chat.chat_id
+  return chat.remark || chat.group_name || chat.chat_id
+}
 
 function isAuditId(id) { return id && id.startsWith('msg_auditid_') }
 function canRecall(m) { return !!m.message_id && !isAuditId(m.message_id) }
@@ -586,6 +594,67 @@ async function refreshMsgId() {
   try { const r = await axios.post('/api/message/history', { chat_type: apiChatType.value, chat_id: current.value.chat_id, appid: app.currentBotId || '', limit: 1 }); lastMsgId.value = r.data?.data?.last_msg_id || lastMsgId.value } catch {}
 }
 
+function requestGroupRefresh(chat) {
+  return axios.post('/api/message/group-info/refresh', {
+    group_id: chat.chat_id,
+    appid: chat.appid || app.currentBotId || '',
+  })
+}
+
+function isHandledGroupError(error) {
+  const data = error.response?.data
+  return !!(data?.removed || data?.left_group)
+}
+
+function syncCurrentChat() {
+  if (!current.value) return
+  const refreshed = chats.value.find(c => c.chat_id === current.value.chat_id && (!current.value.appid || c.appid === current.value.appid))
+  if (refreshed) Object.assign(current.value, refreshed)
+  else current.value = null
+}
+
+async function refreshGroup(chat) {
+  try {
+    await requestGroupRefresh(chat)
+  } catch (error) {
+    if (!isHandledGroupError(error)) throw error
+  }
+  await fetchChats()
+  syncCurrentChat()
+}
+
+async function refreshGroupInfo() {
+  const chat = current.value
+  if (!chat?.chat_id || apiChatType.value !== 'group' || refreshingGroup.value || refreshingPage.value) return
+  refreshingGroup.value = chat.chat_id
+  groupRefreshError.value = ''
+  try {
+    await refreshGroup(chat)
+  } catch (e) {
+    groupRefreshError.value = e.response?.data?.message || e.message || '群信息更新失败'
+  } finally {
+    refreshingGroup.value = ''
+  }
+}
+
+async function refreshPageGroups() {
+  const groups = chats.value.filter(c => c.chat_id).slice(0, 25)
+  if (apiChatType.value !== 'group' || !groups.length || refreshingPage.value || refreshingGroup.value) return
+  refreshingPage.value = true
+  groupRefreshError.value = ''
+  let failed = 0
+  for (let i = 0; i < groups.length && !_unmounted; i++) {
+    refreshingGroup.value = groups[i].chat_id
+    try {
+      await refreshGroup(groups[i])
+    } catch { failed++ }
+    if (i < groups.length - 1) await new Promise(resolve => setTimeout(resolve, 1000))
+  }
+  refreshingGroup.value = ''
+  refreshingPage.value = false
+  if (failed) groupRefreshError.value = `${failed} 个群更新失败`
+}
+
 function isNearBottom() { const el = historyRef.value; if (!el) return true; return el.scrollHeight - el.scrollTop - el.clientHeight < 80 }
 function scrollBottom() { const el = historyRef.value; if (el) el.scrollTop = el.scrollHeight }
 
@@ -739,11 +808,14 @@ onUnmounted(() => { _unmounted = true; off('new_log', onNewLog); off('open', onW
 <template>
   <div class="msg-page">
     <div class="msg-layout">
-      <!-- Chat list -->
+      <!-- 聊天列表 -->
       <div :class="['chat-list-panel', { 'mobile-hidden': isMobile && mobileView !== 'list' }]">
         <div class="panel-header">
           <span>聊天列表</span>
-          <button class="add-remark-btn" title="添加备注" @click="openAddRemark">+</button>
+          <button class="panel-tool-btn panel-add-btn" title="添加备注" @click="openAddRemark">+备注</button>
+          <button class="panel-tool-btn panel-refresh-btn" :disabled="apiChatType !== 'group' || !chats.length || !!refreshingGroup || refreshingPage" title="刷新本页前 25 个群的信息与机器人状态" @click="refreshPageGroups">
+            <span :class="{ spinning: refreshingPage }">↻</span>
+          </button>
           <n-radio-group v-model:value="chatType" size="tiny">
             <n-radio-button value="full_access">全量</n-radio-button>
             <n-radio-button value="remark">备注</n-radio-button>
@@ -762,15 +834,21 @@ onUnmounted(() => { _unmounted = true; off('new_log', onNewLog); off('open', onW
               <span v-if="c.is_full_access" class="chat-avatar-badge">全</span>
             </div>
             <div class="chat-info">
-              <div class="chat-nick">{{ chatType === 'user' ? (c.nickname || c.chat_id) : c.chat_id }}</div>
-              <div v-if="chatType === 'user' && c.nickname" class="chat-id">{{ c.chat_id }}</div>
-              <div v-if="c.remark && chatType !== 'user'" class="chat-remark-label">{{ c.remark }}</div>
-              <div class="chat-preview">{{ c.last_content || '' }}</div>
+              <div class="chat-nick">
+                <span class="chat-nick-text">{{ chatDisplayName(c) }}</span>
+                <span v-if="c.in_group === false" class="chat-left-tag">已退群</span>
+              </div>
+              <div class="chat-subtitle">
+                <span v-if="(chatType === 'user' && c.nickname) || (chatType !== 'user' && c.remark)" class="chat-id">{{ c.chat_id }}</span>
+                <span class="chat-preview">{{ c.last_content || '' }}</span>
+              </div>
             </div>
             <div class="chat-meta">
               <div class="chat-time">{{ shortTime(c.last_time) }}</div>
-              <div v-if="c.msg_count" class="chat-count">{{ c.msg_count }}</div>
-              <button v-if="chatType !== 'user'" class="remark-btn" title="备注" @click.stop="startRemark(c)">✎</button>
+              <div class="chat-meta-row">
+                <div v-if="c.msg_count" class="chat-count">{{ c.msg_count }}</div>
+                <button v-if="chatType !== 'user'" class="remark-btn" title="备注" @click.stop="startRemark(c)">✎</button>
+              </div>
             </div>
           </div>
           <div v-if="chatsLoading && !chats.length" class="chat-empty">正在加载...</div>
@@ -784,21 +862,31 @@ onUnmounted(() => { _unmounted = true; off('new_log', onNewLog); off('open', onW
         </div>
       </div>
 
-      <!-- History panel -->
+      <!-- 聊天记录面板 -->
       <div :class="['chat-history-panel', { 'mobile-hidden': isMobile && mobileView !== 'chat' }]">
         <template v-if="current">
           <div class="panel-header">
             <button v-if="isMobile" class="mobile-back-btn" @click="goBackToList">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
             </button>
-            <span>{{ chatType === 'user' ? (current.nickname || current.chat_id) : current.chat_id }}</span>
-            <span v-if="current.remark && chatType !== 'user'" class="panel-header-remark">({{ current.remark }})</span>
+            <span class="panel-header-title">{{ chatDisplayName(current) }}</span>
+            <span v-if="apiChatType === 'group' && (current.remark || current.group_name)" class="panel-header-group-id">{{ current.chat_id }}</span>
+            <template v-if="apiChatType === 'group'">
+              <button class="header-action-btn" :disabled="!!refreshingGroup || refreshingPage" title="更新群信息与机器人状态" @click="refreshGroupInfo">
+                <span :class="{ spinning: refreshingGroup === current.chat_id }">↻</span>
+                <span>更新群信息</span>
+              </button>
+              <button class="header-action-btn" title="备注" @click="startRemark(current)">
+                <span class="header-pencil">✎</span><span>备注</span>
+              </button>
+            </template>
             <span v-if="chatType !== 'full_access' && chatType !== 'remark'" class="panel-header-info">
               <template v-if="lastMsgId">msg_id: {{ lastMsgId.slice(0, 16) }}...</template>
               <button class="refresh-msgid-btn" @click="refreshMsgId" title="刷新消息ID">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6" /><path d="M3 12a9 9 0 0 1 15-6.7L21 8" /><path d="M3 22v-6h6" /><path d="M21 12a9 9 0 0 1-15 6.7L3 16" /></svg>
               </button>
             </span>
+            <span v-if="groupRefreshError" class="group-refresh-error">{{ groupRefreshError }}</span>
           </div>
           <div class="history-body" ref="historyRef" @scroll="onHistoryScroll">
             <div v-if="loadingOlder" class="history-hint loading-older"><span class="load-spinner"></span>正在加载历史消息...</div>
@@ -868,7 +956,7 @@ onUnmounted(() => { _unmounted = true; off('new_log', onNewLog); off('open', onW
             <div v-if="!history.length" class="chat-empty" style="padding-top:48px">暂无消息记录，可在下方发送消息</div>
           </div>
 
-          <!-- Send area -->
+          <!-- 发送区域 -->
           <div class="send-area">
             <div v-if="quotedMsg" class="quote-preview">
               <div class="quote-main">
@@ -902,7 +990,7 @@ onUnmounted(() => { _unmounted = true; off('new_log', onNewLog); off('open', onW
               <select v-if="msgType === 'ark'" v-model="arkTpl" class="send-type-select"><option value="23">23 - 链接卡片</option><option value="24">24 - 文本卡片</option><option value="37">37 - 大图卡片</option></select>
             </div>
 
-            <!-- Card form -->
+            <!-- 卡片表单 -->
             <div v-if="msgType === 'card'" class="ark-form">
               <div class="ark-grid">
                 <div class="ark-field"><label>标题</label><input v-model="cardFields.title" placeholder="标题" /></div>
@@ -913,7 +1001,7 @@ onUnmounted(() => { _unmounted = true; off('new_log', onNewLog); off('open', onW
               <button class="send-btn ark-send-btn" @click="sendMsg" :disabled="sending">{{ sending ? '...' : '发送卡片' }}</button>
             </div>
 
-            <!-- ARK form -->
+            <!-- ARK 表单 -->
             <div v-if="msgType === 'ark'" class="ark-form">
               <div class="ark-grid">
                 <template v-if="arkTpl === '24'">
@@ -948,7 +1036,7 @@ onUnmounted(() => { _unmounted = true; off('new_log', onNewLog); off('open', onW
               <input v-model="customSendId" class="send-custom-id" :placeholder="sendMode === 'custom_event_id' ? '输入事件 ID' : '输入 msg_id'" />
             </div>
 
-            <!-- Normal send -->
+            <!-- 普通消息发送 -->
             <div v-if="msgType !== 'ark' && msgType !== 'card'" class="send-input-row">
               <textarea v-model="msgText" class="send-input" rows="2" :placeholder="placeholder" @keydown="onKeydown" />
               <button class="send-btn" @click="sendMsg" :disabled="sending">{{ sending ? '...' : '发送' }}</button>
@@ -1028,27 +1116,36 @@ onUnmounted(() => { _unmounted = true; off('new_log', onNewLog); off('open', onW
   font-weight:600
 }
 .panel-header > span:first-child { margin-right:0 }
-.add-remark-btn {
+.panel-tool-btn {
   background:none;
   border:1px solid var(--border);
   cursor:pointer;
   color:var(--text2);
-  font-size:16px;
-  font-weight:700;
-  width:22px;
   height:22px;
   border-radius:4px;
   display:flex;
   align-items:center;
   justify-content:center;
   transition:color .15s,background .15s;
-  margin-right:auto;
   line-height:1;
-  padding:0
+  padding:0 5px
 }
-.add-remark-btn:hover {
+.panel-tool-btn:hover:not(:disabled) {
   color:var(--accent);
   background:var(--bg-float)
+}
+.panel-tool-btn:disabled {
+  opacity:.4;
+  cursor:default
+}
+.panel-add-btn {
+  font-size:12px;
+  font-weight:600
+}
+.panel-refresh-btn {
+  width:22px;
+  padding:0;
+  margin-right:auto
 }
 .chat-search {
   margin:8px 10px
@@ -1062,6 +1159,8 @@ onUnmounted(() => { _unmounted = true; off('new_log', onNewLog); off('open', onW
   align-items:center;
   gap:10px;
   padding:10px 14px;
+  height:56px;
+  box-sizing:border-box;
   cursor:pointer;
   transition:background .12s
 }
@@ -1129,17 +1228,38 @@ onUnmounted(() => { _unmounted = true; off('new_log', onNewLog); off('open', onW
 .chat-nick {
   color:var(--text);
   font-size:14px;
-  white-space:nowrap;
-  overflow:hidden;
-  text-overflow:ellipsis;
   display:flex;
   align-items:center;
   gap:4px
 }
+.chat-nick-text,
+.chat-id,
+.panel-header-title,
+.panel-header-group-id {
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap
+}
+.chat-left-tag {
+  flex-shrink:0;
+  color:var(--danger);
+  font-size:10px;
+  font-weight:500
+}
 .chat-id {
   color:var(--text3);
   font-size:11px;
-  font-family:monospace
+  font-family:monospace;
+  max-width:55%;
+  flex-shrink:1
+}
+.chat-subtitle {
+  display:flex;
+  align-items:center;
+  gap:6px;
+  min-width:0;
+  height:17px
 }
 .chat-preview {
   color:var(--text2);
@@ -1147,11 +1267,19 @@ onUnmounted(() => { _unmounted = true; off('new_log', onNewLog); off('open', onW
   white-space:nowrap;
   overflow:hidden;
   text-overflow:ellipsis;
-  margin-top:2px
+  min-width:0;
+  flex:1
 }
 .chat-meta {
   flex-shrink:0;
   text-align:right
+}
+.chat-meta-row {
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:2px;
+  margin-top:3px
 }
 .chat-time {
   color:var(--text3);
@@ -1163,13 +1291,7 @@ onUnmounted(() => { _unmounted = true; off('new_log', onNewLog); off('open', onW
   font-size:10px;
   border-radius:8px;
   padding:1px 6px;
-  margin-top:4px;
   display:inline-block
-}
-.chat-remark-label {
-  font-size:10px;
-  color:var(--accent);
-  line-height:1.3
 }
 .remark-btn {
   background:none;
@@ -1186,10 +1308,9 @@ onUnmounted(() => { _unmounted = true; off('new_log', onNewLog); off('open', onW
   color:var(--accent);
   background:var(--bg3)
 }
-.panel-header-remark {
-  font-size:12px;
-  color:var(--accent);
-  margin-left:4px
+.spinning {
+  display:inline-block;
+  animation:load-spin .7s linear infinite
 }
 .chat-empty {
   color:var(--text3);
@@ -2087,6 +2208,46 @@ onUnmounted(() => { _unmounted = true; off('new_log', onNewLog); off('open', onW
   align-items:center;
   gap:4px
 }
+.panel-header-title {
+  max-width:260px
+}
+.panel-header-group-id {
+  color:var(--text3);
+  font-family:monospace;
+  font-size:11px;
+  max-width:220px
+}
+.header-action-btn {
+  height:24px;
+  display:inline-flex;
+  align-items:center;
+  gap:4px;
+  padding:2px 7px;
+  border:1px solid var(--border);
+  border-radius:4px;
+  background:var(--bg3);
+  color:var(--text2);
+  font-size:11px;
+  cursor:pointer;
+  white-space:nowrap
+}
+.header-action-btn:hover:not(:disabled) {
+  color:var(--accent);
+  border-color:var(--accent)
+}
+.header-action-btn:disabled {
+  opacity:.5;
+  cursor:default
+}
+.header-pencil {
+  font-size:13px;
+  line-height:1
+}
+.group-refresh-error {
+  color:var(--danger);
+  font-size:11px;
+  font-weight:400
+}
 .refresh-msgid-btn {
   background:none;
   border:none;
@@ -2199,6 +2360,20 @@ onUnmounted(() => { _unmounted = true; off('new_log', onNewLog); off('open', onW
 .panel-header {
   padding:8px 10px;
   font-size:13px
+}
+.panel-header-title {
+  max-width:160px
+}
+.panel-header-group-id {
+  max-width:140px
+}
+.header-action-btn span:last-child {
+  display:none
+}
+.header-action-btn {
+  width:26px;
+  justify-content:center;
+  padding:2px
 }
 .ark-grid {
   grid-template-columns:1fr
