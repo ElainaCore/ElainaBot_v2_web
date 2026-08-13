@@ -122,7 +122,7 @@ async function applyScanResponse(data) {
     stopScanPoll()
     setTimeout(() => { showQR.value = false }, 800)
     await loadStatus()
-    if (status.ready) { pushToast('新版开放平台已授权'); loadBots() }
+    if (status.ready) { pushToast('开放平台已授权'); loadBots() }
   } else if (st === 'selecting') {
     stopScanPoll()
     scanDevelopers.value = data.developers || []
@@ -1163,7 +1163,7 @@ async function loadNotifications() {
     noti.list = data.data?.messages || []
   } catch (e) {
     noti.list = []
-    noti.error = e.message === '未登录' ? '平台通知需要旧版开放平台登录凭证，请先完成扫码登录' : (e.message || '获取通知失败')
+    noti.error = e.message === '未登录' ? '平台通知凭证已失效，请重新扫码登录' : (e.message || '获取通知失败')
   }
   noti.loading = false
 }
@@ -1466,7 +1466,7 @@ defineExpose({ reload: loadStatus })
             <div class="v2-gate-hero">
               <div class="v2-gate-icon"><AppIcon name="robot" :size="34" /></div>
               <div>
-                <h2 class="page-title">新版 QQ 机器人管理面板</h2>
+                <h2 class="page-title">QQ 机器人管理面板</h2>
                 <p class="page-sub">连接 QQ 开放平台账号后，可在 Elaina 中管理机器人、服务范围、运营数据与开发设置。</p>
               </div>
             </div>
@@ -1644,7 +1644,7 @@ defineExpose({ reload: loadStatus })
                       <li><b>个人认证</b>：可设置为公开使用，机器人进群数量添加上限为 500 个。</li>
                       <li><b>企业认证</b>：所有场景均可设置为公开被使用的服务范围。</li>
                     </ul>
-                    <p>备注：历史通过旧版开放平台审核上架的机器人不受群上限数量影响。</p>
+                    <p>备注：历史已通过平台审核上架的机器人不受群上限数量影响。</p>
                   </div>
                 </div>
                 <div class="sec-group scope-card">
@@ -2255,7 +2255,7 @@ defineExpose({ reload: loadStatus })
     <OpenAPILoginDialog
       v-if="showQR"
       :title="scanStatus === 'selecting' ? '选择登录主体' : '扫码登录 QQ 开放平台'"
-      :description="scanStatus === 'selecting' ? '请选择你要登录的开发者主体帐号' : '登录会话仅用于连接新版 QQ 机器人管理面板'"
+      :description="scanStatus === 'selecting' ? '请选择你要登录的开发者主体帐号' : '登录会话仅用于连接 QQ 机器人开放平台管理面板'"
       :steps="scanSteps"
       :show-qr="scanStatus !== 'selecting'"
       :qr-image="qrImg"

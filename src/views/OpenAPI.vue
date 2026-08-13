@@ -1,9 +1,9 @@
 <script setup>
 import { ref } from 'vue'
-import OpenAPIOld from './openapi/OpenAPIOld.vue'
-import OpenAPI from './openapi/OpenAPI.vue'
+import OpenAPIPlatform from './openapi/OpenAPI.vue'
+import FunctionConfig from './openapi/FunctionConfig.vue'
 
-const mode = ref('old')
+const mode = ref('platform')
 function setMode(m) {
   mode.value = m
 }
@@ -11,20 +11,18 @@ function setMode(m) {
 
 <template>
   <div class="openapi-panel">
-    <OpenAPIOld v-if="mode === 'old'" />
-    <OpenAPI v-else />
+    <OpenAPIPlatform v-if="mode === 'platform'" />
+    <FunctionConfig v-else />
 
     <div class="openapi-switch">
-      <button :class="{ active: mode === 'old' }" @click="setMode('old')">旧版开放平台</button>
-      <button :class="{ active: mode === 'new' }" @click="setMode('new')">
-        新版开放平台
-      </button>
+      <button :class="{ active: mode === 'platform' }" @click="setMode('platform')">开放平台</button>
+      <button :class="{ active: mode === 'function-config' }" @click="setMode('function-config')">功能配置</button>
     </div>
   </div>
 </template>
 
 <style scoped>
-.openapi-panel { position: relative; }
+.openapi-panel { position: relative; min-height: 100%; }
 .openapi-switch {
   position: fixed;
   right: 24px;
@@ -57,5 +55,9 @@ function setMode(m) {
   background: #0099ff;
   color: #fff;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+@media (max-width: 767px) {
+  .openapi-switch { right: 12px; bottom: 12px; }
+  .openapi-switch button { padding: 8px 12px; }
 }
 </style>
