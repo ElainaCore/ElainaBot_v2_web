@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
+import Draggable from 'vuedraggable'
 import axios from '../../utils/axios'
 import SvgIcon from '../../components/SvgIcon.vue'
 
@@ -40,6 +41,10 @@ const menuOpen = ref(new Set())
 const childOpen = ref(new Set())
 const previewScope = ref('channel')
 const previewMenuOpen = ref(null)
+const previewSwipeState = { pointerId: null, startX: 0, startScrollLeft: 0, moved: false }
+let previewSwipeResetTimer = null
+const sortKeys = new WeakMap()
+let sortKeyCounter = 0
 
 const scope = ref('c2c')
 const panels = ref([])
@@ -145,14 +150,15 @@ function draftChanged(record) {
   return !!(record._isNew || record._deleted || record._dirty || record._targetDirty)
 }
 
-function setMenuOpen(index) {
+function setMenuOpen(item) {
+  const key = sortKey(item)
   const next = new Set(menuOpen.value)
-  next.has(index) ? next.delete(index) : next.add(index)
+  next.has(key) ? next.delete(key) : next.add(key)
   menuOpen.value = next
 }
 
-function setChildOpen(parentIndex, childIndex) {
-  const key = `${parentIndex}:${childIndex}`
+function setChildOpen(item) {
+  const key = sortKey(item)
   const next = new Set(childOpen.value)
   next.has(key) ? next.delete(key) : next.add(key)
   childOpen.value = next
@@ -161,7 +167,8 @@ function setChildOpen(parentIndex, childIndex) {
 function addMenu() {
   if (menuDraft.value.length >= 10) return showNotice('一级菜单最多 10 项', 'error')
   menuDraft.value.push(menuDefault())
-  menuOpen.value = new Set([menuDraft.value.length - 1])
+  const item = menuDraft.value[menuDraft.value.length - 1]
+  menuOpen.value = new Set([sortKey(item)])
 }
 
 function removeMenu(index) {
@@ -175,8 +182,19 @@ function moveMenu(index, offset) {
   const target = index + offset
   if (target < 0 || target >= menuDraft.value.length) return
   ;[menuDraft.value[index], menuDraft.value[target]] = [menuDraft.value[target], menuDraft.value[index]]
-  menuOpen.value = new Set([target])
+  menuOpen.value = new Set([sortKey(menuDraft.value[target])])
   childOpen.value = new Set()
+}
+
+function sortKey(item) {
+  if (!item || typeof item !== 'object') return String(item)
+  if (!sortKeys.has(item)) sortKeys.set(item, `sort-${++sortKeyCounter}`)
+  return sortKeys.get(item)
+}
+
+function finishMenuSort(event) {
+  if (event.oldIndex === event.newIndex || event.newIndex == null) return
+  previewMenuOpen.value = null
 }
 
 function changeMenuType(item) {
@@ -184,10 +202,11 @@ function changeMenuType(item) {
   if (item.type === 'switch' && !item.switch) item.switch = { switch_id: '', default: false }
 }
 
-function addChild(item, parentIndex) {
+function addChild(item) {
   if ((item.sub_menu_items || []).length >= 5) return
   item.sub_menu_items = [...(item.sub_menu_items || []), childDefault()]
-  childOpen.value = new Set([`${parentIndex}:${item.sub_menu_items.length - 1}`])
+  const child = item.sub_menu_items[item.sub_menu_items.length - 1]
+  childOpen.value = new Set([sortKey(child)])
 }
 
 function removeChild(item, childIndex) {
@@ -195,11 +214,11 @@ function removeChild(item, childIndex) {
   childOpen.value = new Set()
 }
 
-function moveChild(item, childIndex, offset, parentIndex) {
+function moveChild(item, childIndex, offset) {
   const target = childIndex + offset
   if (target < 0 || target >= item.sub_menu_items.length) return
   ;[item.sub_menu_items[childIndex], item.sub_menu_items[target]] = [item.sub_menu_items[target], item.sub_menu_items[childIndex]]
-  childOpen.value = new Set([`${parentIndex}:${target}`])
+  childOpen.value = new Set([sortKey(item.sub_menu_items[target])])
 }
 
 function serializeMenuItem(item) {
@@ -481,6 +500,13 @@ function removePanel(record) {
   }
 }
 
+function finishPanelSort(event) {
+  if (event.oldIndex === event.newIndex || event.newIndex == null) return
+  panels.value.forEach(item => {
+    if (!item._deleted) item._dirty = true
+  })
+}
+
 function serializePanelItem(item) {
   const value = { type: item.type, name: String(item.name || '').trim() }
   if (item.desc) value.desc = String(item.desc).trim()
@@ -586,7 +612,48 @@ async function savePanels() {
   }
 }
 
+function startPreviewSwipe(event) {
+  if (event.button != null && event.button !== 0) return
+  previewSwipeState.pointerId = event.pointerId
+  previewSwipeState.startX = event.clientX
+  previewSwipeState.startScrollLeft = event.currentTarget.scrollLeft
+  previewSwipeState.moved = false
+  event.currentTarget.setPointerCapture?.(event.pointerId)
+  previewSwipeMovedReset()
+}
+
+function movePreviewSwipe(event) {
+  if (previewSwipeState.pointerId !== event.pointerId) return
+  const distance = event.clientX - previewSwipeState.startX
+  if (Math.abs(distance) < 3) return
+  previewSwipeState.moved = true
+  event.currentTarget.scrollLeft = previewSwipeState.startScrollLeft - distance
+  if (event.cancelable) event.preventDefault()
+  previewSwipeMovedReset()
+}
+
+function endPreviewSwipe(event) {
+  if (previewSwipeState.pointerId !== event.pointerId) return
+  event.currentTarget.releasePointerCapture?.(event.pointerId)
+  previewSwipeState.pointerId = null
+  previewSwipeMovedReset()
+}
+
+function previewSwipeMovedReset() {
+  if (previewSwipeResetTimer) clearTimeout(previewSwipeResetTimer)
+  previewSwipeResetTimer = setTimeout(() => {
+    previewSwipeState.moved = false
+    previewSwipeResetTimer = null
+  }, 400)
+}
+
 function togglePreviewMenu(index, item) {
+  if (previewSwipeState.moved) {
+    previewSwipeState.moved = false
+    if (previewSwipeResetTimer) clearTimeout(previewSwipeResetTimer)
+    previewSwipeResetTimer = null
+    return
+  }
   previewMenuOpen.value = item.type === 'menu' && previewMenuOpen.value !== index ? index : null
 }
 
@@ -642,7 +709,7 @@ onMounted(async () => {
                 <div v-if="openedPreviewMenu" class="phone-menu-popover">
                   <button v-for="(child, childIndex) in openedPreviewMenu.sub_menu_items || []" :key="childIndex">↗ {{ child.name || '未命名子菜单' }}</button>
                 </div>
-                <div class="phone-menu-strip">
+                <div class="phone-menu-strip" @pointerdown="startPreviewSwipe" @pointermove="movePreviewSwipe" @pointerup="endPreviewSwipe" @pointercancel="endPreviewSwipe">
                   <button v-for="(item, index) in previewMenu" :key="index" :class="{ active: previewMenuOpen === index }" @click="togglePreviewMenu(index, item)">
                     <span>{{ item.type === 'menu' ? '☷' : '↗' }}</span><b>{{ item.name || '未命名菜单' }}</b>
                   </button>
@@ -691,20 +758,22 @@ onMounted(async () => {
               <span v-if="menuDirty" class="pending-text">有未保存修改</span>
             </div>
 
-            <div v-if="menuDraft.length" class="accordion-list">
-              <article v-for="(item, index) in menuDraft" :key="index" :class="['accordion-item', { open: menuOpen.has(index) }]">
+            <Draggable v-if="menuDraft.length" v-model="menuDraft" :item-key="sortKey" tag="div" class="accordion-list sortable-list" handle=".menu-drag-handle" :animation="220" easing="cubic-bezier(.2, .8, .2, 1)" ghost-class="sort-placeholder" chosen-class="sort-chosen" drag-class="sort-dragging" fallback-class="sort-floating" :force-fallback="true" :fallback-on-body="true" :fallback-tolerance="3" :swap-threshold="0.58" :scroll-sensitivity="70" :scroll-speed="12" @end="finishMenuSort">
+              <template #item="{ element: item, index }">
+              <article :class="['accordion-item', { open: menuOpen.has(sortKey(item)) }]">
                 <div class="accordion-header">
-                  <button class="accordion-toggle" @click="setMenuOpen(index)">
+                  <button class="accordion-toggle" @click="setMenuOpen(item)">
                     <span class="chevron">›</span>
                     <span class="row-copy"><b>{{ index + 1 }}. {{ item.name || '未命名菜单' }}</b><small>{{ typeLabel(item.type) }} · {{ menuSummary(item) }}</small></span>
                   </button>
                   <div class="row-actions">
+                    <button class="icon-btn drag-handle menu-drag-handle" title="按住并拖动整项排序"><SvgIcon name="grip" :size="14" /></button>
                     <button class="icon-btn" title="上移" :disabled="index === 0" @click="moveMenu(index, -1)">↑</button>
                     <button class="icon-btn" title="下移" :disabled="index === menuDraft.length - 1" @click="moveMenu(index, 1)">↓</button>
                     <button class="icon-btn danger" title="删除" @click="removeMenu(index)"><SvgIcon name="trash" :size="14" /></button>
                   </div>
                 </div>
-                <div v-if="menuOpen.has(index)" class="accordion-body">
+                <div v-if="menuOpen.has(sortKey(item))" class="accordion-body">
                   <div class="form-grid">
                     <label><span>类型</span><select v-model="item.type" @change="changeMenuType(item)"><option v-for="type in MENU_TYPES" :key="type.value" :value="type.value">{{ type.label }}</option></select></label>
                     <label><span>菜单名称</span><input v-model="item.name" maxlength="20" placeholder="请输入菜单名称" /></label>
@@ -716,29 +785,35 @@ onMounted(async () => {
                     </template>
 
                     <div v-if="item.type === 'menu'" class="sub-menu-list full">
-                      <div class="sub-menu-title"><span>子菜单 · {{ (item.sub_menu_items || []).length }} / 5</span><button class="btn" :disabled="(item.sub_menu_items || []).length >= 5" @click="addChild(item, index)"><SvgIcon name="plus" :size="13" />添加子项</button></div>
-                      <article v-for="(child, childIndex) in item.sub_menu_items || []" :key="childIndex" :class="['accordion-item child', { open: childOpen.has(`${index}:${childIndex}`) }]">
+                      <div class="sub-menu-title"><span>子菜单 · {{ (item.sub_menu_items || []).length }} / 5</span><button class="btn" :disabled="(item.sub_menu_items || []).length >= 5" @click="addChild(item)"><SvgIcon name="plus" :size="13" />添加子项</button></div>
+                      <Draggable v-model="item.sub_menu_items" :item-key="sortKey" tag="div" class="sub-menu-sort-list sortable-list" handle=".child-drag-handle" :animation="220" easing="cubic-bezier(.2, .8, .2, 1)" ghost-class="sort-placeholder" chosen-class="sort-chosen" drag-class="sort-dragging" fallback-class="sort-floating" :force-fallback="true" :fallback-on-body="true" :fallback-tolerance="3" :swap-threshold="0.58">
+                        <template #item="{ element: child, index: childIndex }">
+                        <article :class="['accordion-item child', { open: childOpen.has(sortKey(child)) }]">
                         <div class="accordion-header">
-                          <button class="accordion-toggle" @click="setChildOpen(index, childIndex)"><span class="chevron">›</span><span class="row-copy"><b>{{ childIndex + 1 }}. {{ child.name || '未命名子项' }}</b><small>{{ typeLabel(child.type) }} · {{ childSummary(child) }}</small></span></button>
+                          <button class="accordion-toggle" @click="setChildOpen(child)"><span class="chevron">›</span><span class="row-copy"><b>{{ childIndex + 1 }}. {{ child.name || '未命名子项' }}</b><small>{{ typeLabel(child.type) }} · {{ childSummary(child) }}</small></span></button>
                           <div class="row-actions">
-                            <button class="icon-btn" title="上移" :disabled="childIndex === 0" @click="moveChild(item, childIndex, -1, index)">↑</button>
-                            <button class="icon-btn" title="下移" :disabled="childIndex === item.sub_menu_items.length - 1" @click="moveChild(item, childIndex, 1, index)">↓</button>
+                            <button class="icon-btn drag-handle child-drag-handle" title="按住并拖动整项排序"><SvgIcon name="grip" :size="13" /></button>
+                            <button class="icon-btn" title="上移" :disabled="childIndex === 0" @click="moveChild(item, childIndex, -1)">↑</button>
+                            <button class="icon-btn" title="下移" :disabled="childIndex === item.sub_menu_items.length - 1" @click="moveChild(item, childIndex, 1)">↓</button>
                             <button class="icon-btn danger" title="删除" @click="removeChild(item, childIndex)"><SvgIcon name="trash" :size="13" /></button>
                           </div>
                         </div>
-                        <div v-if="childOpen.has(`${index}:${childIndex}`)" class="accordion-body">
+                        <div v-if="childOpen.has(sortKey(child))" class="accordion-body">
                           <div class="form-grid">
                             <label><span>类型</span><select v-model="child.type"><option v-for="type in CHILD_TYPES" :key="type.value" :value="type.value">{{ type.label }}</option></select></label>
                             <label><span>名称</span><input v-model="child.name" placeholder="请输入子菜单名称" /></label>
                             <label class="full"><span>{{ child.type === 'link' ? '链接地址' : '填入聊天框的内容' }}</span><input v-if="child.type === 'link'" v-model="child.link" placeholder="https://" /><input v-else v-model="child.send_message" placeholder="例如 /settings" /></label>
                           </div>
                         </div>
-                      </article>
+                        </article>
+                        </template>
+                      </Draggable>
                     </div>
                   </div>
                 </div>
               </article>
-            </div>
+              </template>
+            </Draggable>
             <div v-else class="empty-state">暂无自定义菜单</div>
           </div>
         </section>
@@ -759,14 +834,16 @@ onMounted(async () => {
             </div>
           </header>
           <div class="surface-body">
-            <div v-if="panels.length" class="panel-list">
-              <article v-for="record in panels" :key="draftKey(record)" :class="['panel-row', { open: panelOpen.has(draftKey(record)), dirty: draftChanged(record) && !record._deleted, deleting: record._deleted }]">
+            <Draggable v-if="panels.length" v-model="panels" :item-key="draftKey" tag="div" class="panel-list sortable-list" handle=".panel-drag-handle" :animation="220" easing="cubic-bezier(.2, .8, .2, 1)" ghost-class="sort-placeholder" chosen-class="sort-chosen" drag-class="sort-dragging" fallback-class="sort-floating" :force-fallback="true" :fallback-on-body="true" :fallback-tolerance="3" :swap-threshold="0.58" :scroll-sensitivity="70" :scroll-speed="12" @end="finishPanelSort">
+              <template #item="{ element: record, index }">
+              <article :class="['panel-row', { open: panelOpen.has(draftKey(record)), dirty: draftChanged(record) && !record._deleted, deleting: record._deleted }]">
                 <div class="panel-row-header">
                   <button class="accordion-toggle" :disabled="record._deleted" @click="setPanelOpen(record)">
                     <span class="chevron">›</span>
                     <span class="row-copy"><b>{{ panelTitle(record) }}</b><small>{{ panelSummary(record) }}</small></span>
                     <span v-if="record._deleted" class="draft-badge danger">待删除</span><span v-else-if="record._isNew" class="draft-badge">新建草稿</span><span v-else-if="record._dirty || record._targetDirty" class="draft-badge">待保存</span>
                   </button>
+                  <button v-if="!record._deleted" class="icon-btn drag-handle panel-drag-handle" title="按住并拖动整项排序"><SvgIcon name="grip" :size="14" /></button>
                   <button :class="['btn', record._deleted ? '' : 'danger']" @click="removePanel(record)">{{ record._deleted ? '撤销删除' : '删除' }}</button>
                 </div>
                 <div v-if="panelOpen.has(draftKey(record)) && !record._deleted" class="panel-body">
@@ -794,7 +871,8 @@ onMounted(async () => {
                   </div>
                 </div>
               </article>
-            </div>
+              </template>
+            </Draggable>
             <div v-else class="empty-state">当前场景暂无指令</div>
           </div>
         </section>
