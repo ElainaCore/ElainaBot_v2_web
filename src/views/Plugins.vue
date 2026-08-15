@@ -17,6 +17,7 @@ watch(fileView, v => localStorage.setItem('plugins_file_view', v))
 const loading = ref(false)
 const expanded = reactive({})
 const botBindOpen = reactive({})
+const deletedBotIds = new WeakMap()
 const MAX_EDIT = 50 * 1024
 
 const editor = reactive({ show: false, filename: '', content: '', originalContent: '', path: '', readonly: false, modified: false, saving: false })
@@ -110,6 +111,27 @@ function visibleFiles(d) { if (!d.is_large || fileView.value === 'all') return d
 async function toggleDir(d) { const ef = entryFile(d); if (!ef) { msg.error('未找到主入口文件'); return } await toggleFile(ef, d) }
 function isSubFile(f) { return f.name.startsWith('app/') }
 function toggleBotBind(key) { botBindOpen[key] = !botBindOpen[key] }
+function isBotBound(target, appid) {
+  const id = String(appid)
+  return (target.allowed_bots || []).some(value => String(value) === id)
+}
+function botBindingOptions(target) {
+  const activeBots = appStore.bots.map(bot => ({ ...bot, appid: String(bot.appid), deleted: false }))
+  const activeIds = new Set(activeBots.map(bot => bot.appid))
+  let cachedIds = deletedBotIds.get(target)
+  if (!cachedIds) {
+    cachedIds = new Set()
+    deletedBotIds.set(target, cachedIds)
+  }
+  for (const value of target.allowed_bots || []) {
+    const id = String(value)
+    if (id && !activeIds.has(id)) cachedIds.add(id)
+  }
+  const deletedBots = [...cachedIds]
+    .filter(id => !activeIds.has(id))
+    .map(appid => ({ appid, name: '已删除机器人', avatar: '', deleted: true }))
+  return [...activeBots, ...deletedBots]
+}
 
 async function fetchAll() {
   loading.value = true
@@ -275,9 +297,11 @@ async function saveBotBindings() {
   for (const d of dirs.value) { if (d.allowed_bots?.length) map[d.directory] = [...d.allowed_bots]; for (const f of d.files) if (f.allowed_bots?.length) map[`${d.directory}/${fileBase(f)}`] = [...f.allowed_bots] }
   try { await axios.post('/api/plugins/bots', { plugin_bots: map }) } catch { msg.error('保存机器人绑定失败') }
 }
-function bindBot(target, appid, checked) {
-  const bots = target.allowed_bots || []
-  target.allowed_bots = checked ? [...new Set([...bots, appid])] : bots.filter(bot => bot !== appid)
+function bindBot(target, bot, checked) {
+  if (bot.deleted && checked) return
+  const appid = String(bot.appid)
+  const bots = (target.allowed_bots || []).map(String)
+  target.allowed_bots = checked ? [...new Set([...bots, appid])] : bots.filter(id => id !== appid)
   saveBotBindings()
 }
 
@@ -334,10 +358,11 @@ onMounted(() => { appStore.fetchBots(); fetchAll() })
         </div>
         <div v-if="botBindOpen[d.directory]" class="bot-bind-panel" @click.stop>
           <div class="bot-bind-title">选择允许触发的机器人 (不选 = 全部)</div>
-          <label v-for="bot in appStore.bots" :key="bot.appid" class="bot-bind-item">
-            <input type="checkbox" :checked="(d.allowed_bots || []).includes(bot.appid)" @change="e => bindBot(d, bot.appid, e.target.checked)" />
-            <img v-if="bot.avatar" :src="bot.avatar" class="bot-bind-avatar" />
-            <span>{{ bot.name || bot.appid }}</span><span class="bot-bind-id">{{ bot.appid }}</span>
+          <label v-for="bot in botBindingOptions(d)" :key="bot.appid" :class="['bot-bind-item', { deleted: bot.deleted, locked: bot.deleted && !isBotBound(d, bot.appid) }]" :title="bot.deleted ? (isBotBound(d, bot.appid) ? '该机器人已删除，只能取消绑定' : '已解除绑定，无法重新选择') : ''">
+            <input type="checkbox" :checked="isBotBound(d, bot.appid)" :disabled="bot.deleted && !isBotBound(d, bot.appid)" @change="e => bindBot(d, bot, e.target.checked)" />
+            <span v-if="bot.deleted" class="bot-bind-avatar deleted-avatar"><SvgIcon name="person" :size="12" /></span>
+            <img v-else-if="bot.avatar" :src="bot.avatar" class="bot-bind-avatar" />
+            <span>{{ bot.name || bot.appid }}</span><span v-if="bot.deleted" class="bot-bind-deleted">已删除</span><span class="bot-bind-id">{{ bot.appid }}</span>
           </label>
         </div>
         <div v-if="d.commands?.length && expanded[d.directory]" class="p-dir-cmds">
@@ -373,10 +398,11 @@ onMounted(() => { appStore.fetchBots(); fetchAll() })
             </div>
             <div v-if="!d.is_large && botBindOpen[d.directory + '/' + fileBase(f)]" class="bot-bind-panel file-level" @click.stop>
               <div class="bot-bind-title">{{ f.name }} — 选择允许触发的机器人</div>
-              <label v-for="bot in appStore.bots" :key="bot.appid" class="bot-bind-item">
-                <input type="checkbox" :checked="(f.allowed_bots || []).includes(bot.appid)" @change="e => bindBot(f, bot.appid, e.target.checked)" />
-                <img v-if="bot.avatar" :src="bot.avatar" class="bot-bind-avatar" />
-                <span>{{ bot.name || bot.appid }}</span><span class="bot-bind-id">{{ bot.appid }}</span>
+              <label v-for="bot in botBindingOptions(f)" :key="bot.appid" :class="['bot-bind-item', { deleted: bot.deleted, locked: bot.deleted && !isBotBound(f, bot.appid) }]" :title="bot.deleted ? (isBotBound(f, bot.appid) ? '该机器人已删除，只能取消绑定' : '已解除绑定，无法重新选择') : ''">
+                <input type="checkbox" :checked="isBotBound(f, bot.appid)" :disabled="bot.deleted && !isBotBound(f, bot.appid)" @change="e => bindBot(f, bot, e.target.checked)" />
+                <span v-if="bot.deleted" class="bot-bind-avatar deleted-avatar"><SvgIcon name="person" :size="12" /></span>
+                <img v-else-if="bot.avatar" :src="bot.avatar" class="bot-bind-avatar" />
+                <span>{{ bot.name || bot.appid }}</span><span v-if="bot.deleted" class="bot-bind-deleted">已删除</span><span class="bot-bind-id">{{ bot.appid }}</span>
               </label>
             </div>
           </template>
@@ -901,10 +927,36 @@ onMounted(() => { appStore.fetchBots(); fetchAll() })
   accent-color:var(--accent);
   cursor:pointer
 }
+.bot-bind-item.deleted {
+  color:var(--text3)
+}
+.bot-bind-item.locked {
+  cursor:not-allowed;
+  opacity:.65
+}
+.bot-bind-item.locked input[type=checkbox] {
+  cursor:not-allowed
+}
 .bot-bind-avatar {
   width:18px;
   height:18px;
   border-radius:50%
+}
+.bot-bind-avatar.deleted-avatar {
+  display:grid;
+  place-items:center;
+  flex:0 0 18px;
+  color:var(--text3);
+  background:var(--bg3);
+  border:1px solid var(--border);
+  filter:grayscale(1)
+}
+.bot-bind-deleted {
+  padding:0 4px;
+  border-radius:3px;
+  color:var(--text3);
+  background:var(--bg3);
+  font-size:9px
 }
 .bot-bind-id {
   font-size:10px;

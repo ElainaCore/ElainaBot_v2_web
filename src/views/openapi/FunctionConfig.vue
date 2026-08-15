@@ -10,12 +10,6 @@ const SCOPES = [
   { key: 'channel', short: '子频道', label: 'channel 子频道' },
   { key: 'dm', short: '频道私信', label: 'dm 频道私信' },
 ]
-const PREVIEW_SCOPES = [
-  { key: 'channel', label: 'QQ频道' },
-  { key: 'dm', label: '频道私信' },
-  { key: 'group', label: 'QQ群' },
-  { key: 'c2c', label: '消息列表' },
-]
 const MENU_TYPES = [
   { value: 'send_message', label: '发送消息' },
   { value: 'link', label: '链接跳转' },
@@ -39,7 +33,6 @@ const menuOriginal = ref([])
 const menuVersion = ref(null)
 const menuOpen = ref(new Set())
 const childOpen = ref(new Set())
-const previewScope = ref('channel')
 const previewMenuOpen = ref(null)
 const previewSwipeState = { pointerId: null, startX: 0, startScrollLeft: 0, moved: false }
 let previewSwipeResetTimer = null
@@ -114,6 +107,10 @@ function typeLabel(type) {
   return ({ send_message: '发送消息', link: '链接跳转', switch: '开关', menu: '折叠菜单', command: '指令' })[type] || '未设置'
 }
 
+function menuTypeIcon(type) {
+  return ({ send_message: 'msg-up', link: 'link', switch: 'settings', menu: 'menu', command: 'code' })[type] || 'code'
+}
+
 function menuSummary(item) {
   if (item.type === 'send_message') return item.send_message || '未填写指令'
   if (item.type === 'link') return item.link || '未填写链接'
@@ -182,8 +179,6 @@ function moveMenu(index, offset) {
   const target = index + offset
   if (target < 0 || target >= menuDraft.value.length) return
   ;[menuDraft.value[index], menuDraft.value[target]] = [menuDraft.value[target], menuDraft.value[index]]
-  menuOpen.value = new Set([sortKey(menuDraft.value[target])])
-  childOpen.value = new Set()
 }
 
 function sortKey(item) {
@@ -218,7 +213,6 @@ function moveChild(item, childIndex, offset) {
   const target = childIndex + offset
   if (target < 0 || target >= item.sub_menu_items.length) return
   ;[item.sub_menu_items[childIndex], item.sub_menu_items[target]] = [item.sub_menu_items[target], item.sub_menu_items[childIndex]]
-  childOpen.value = new Set([sortKey(item.sub_menu_items[target])])
 }
 
 function serializeMenuItem(item) {
@@ -688,9 +682,7 @@ onMounted(async () => {
 
     <div class="config-workspace">
       <aside class="preview-panel" aria-label="手机预览">
-        <div class="preview-tabs">
-          <button v-for="item in PREVIEW_SCOPES" :key="item.key" :class="{ active: previewScope === item.key }" @click="previewScope = item.key">{{ item.label }}</button>
-        </div>
+        <div class="preview-title">实际效果预览</div>
         <div class="phone-wrap">
           <div class="phone-shell">
             <div class="phone-screen">
@@ -707,11 +699,11 @@ onMounted(async () => {
                   <div class="phone-bubble">请选择下方菜单</div>
                 </div>
                 <div v-if="openedPreviewMenu" class="phone-menu-popover">
-                  <button v-for="(child, childIndex) in openedPreviewMenu.sub_menu_items || []" :key="childIndex">↗ {{ child.name || '未命名子菜单' }}</button>
+                  <button v-for="(child, childIndex) in openedPreviewMenu.sub_menu_items || []" :key="childIndex"><SvgIcon v-if="child.type === 'link'" name="link" :size="12" /><span v-else>↗</span> {{ child.name || '未命名子菜单' }}</button>
                 </div>
                 <div class="phone-menu-strip" @pointerdown="startPreviewSwipe" @pointermove="movePreviewSwipe" @pointerup="endPreviewSwipe" @pointercancel="endPreviewSwipe">
                   <button v-for="(item, index) in previewMenu" :key="index" :class="{ active: previewMenuOpen === index }" @click="togglePreviewMenu(index, item)">
-                    <span>{{ item.type === 'menu' ? '☷' : '↗' }}</span><b>{{ item.name || '未命名菜单' }}</b>
+                    <SvgIcon v-if="item.type === 'link'" name="link" :size="13" /><span v-else>{{ item.type === 'menu' ? '☷' : '↗' }}</span><b>{{ item.name || '未命名菜单' }}</b>
                   </button>
                 </div>
                 <div class="phone-keyboard" />
@@ -740,7 +732,7 @@ onMounted(async () => {
         <section v-if="activeTab === 'menu'" class="config-surface">
           <header class="surface-header">
             <div>
-              <h2>自定义菜单</h2>
+              <h2>菜单项</h2>
               <p>最多 10 个一级菜单，保存后立即对所有用户生效。<span>{{ menuDraft.length }} / 10</span><span v-if="menuVersion != null"> · 版本 {{ menuVersion }}</span></p>
             </div>
             <div class="toolbar">
@@ -752,22 +744,23 @@ onMounted(async () => {
             <div class="list-toolbar">
               <div class="toolbar">
                 <button class="btn" @click="menuDraft = clone(MENU_EXAMPLE); menuOpen = new Set(); childOpen = new Set()">加载示例</button>
-                <button class="btn" :disabled="menuDraft.length >= 10" @click="addMenu"><SvgIcon name="plus" :size="14" />添加菜单</button>
                 <button class="btn danger" :disabled="!menuDraft.length" @click="stageClearMenu"><SvgIcon name="trash" :size="14" />清空</button>
               </div>
               <span v-if="menuDirty" class="pending-text">有未保存修改</span>
             </div>
 
-            <Draggable v-if="menuDraft.length" v-model="menuDraft" :item-key="sortKey" tag="div" class="accordion-list sortable-list" handle=".menu-drag-handle" :animation="220" easing="cubic-bezier(.2, .8, .2, 1)" ghost-class="sort-placeholder" chosen-class="sort-chosen" drag-class="sort-dragging" fallback-class="sort-floating" :force-fallback="true" :fallback-on-body="true" :fallback-tolerance="3" :swap-threshold="0.58" :scroll-sensitivity="70" :scroll-speed="12" @end="finishMenuSort">
+            <Draggable v-if="menuDraft.length" v-model="menuDraft" :item-key="sortKey" tag="div" class="accordion-list sortable-list" handle=".menu-drag-handle" :animation="220" easing="cubic-bezier(.2, .8, .2, 1)" ghost-class="sort-placeholder" chosen-class="sort-chosen" drag-class="sort-dragging" :fallback-tolerance="3" :swap-threshold="0.58" :scroll-sensitivity="70" :scroll-speed="12" @end="finishMenuSort">
               <template #item="{ element: item, index }">
               <article :class="['accordion-item', { open: menuOpen.has(sortKey(item)) }]">
                 <div class="accordion-header">
+                  <button class="icon-btn drag-handle menu-drag-handle" title="按住并拖动整项排序"><SvgIcon name="grip" :size="14" /></button>
                   <button class="accordion-toggle" @click="setMenuOpen(item)">
                     <span class="chevron">›</span>
+                    <span class="item-type-icon"><SvgIcon :name="menuTypeIcon(item.type)" :size="17" /></span>
                     <span class="row-copy"><b>{{ index + 1 }}. {{ item.name || '未命名菜单' }}</b><small>{{ typeLabel(item.type) }} · {{ menuSummary(item) }}</small></span>
                   </button>
                   <div class="row-actions">
-                    <button class="icon-btn drag-handle menu-drag-handle" title="按住并拖动整项排序"><SvgIcon name="grip" :size="14" /></button>
+                    <button class="btn edit-btn" @click="setMenuOpen(item)">{{ menuOpen.has(sortKey(item)) ? '收起' : '编辑' }}</button>
                     <button class="icon-btn" title="上移" :disabled="index === 0" @click="moveMenu(index, -1)">↑</button>
                     <button class="icon-btn" title="下移" :disabled="index === menuDraft.length - 1" @click="moveMenu(index, 1)">↓</button>
                     <button class="icon-btn danger" title="删除" @click="removeMenu(index)"><SvgIcon name="trash" :size="14" /></button>
@@ -786,13 +779,14 @@ onMounted(async () => {
 
                     <div v-if="item.type === 'menu'" class="sub-menu-list full">
                       <div class="sub-menu-title"><span>子菜单 · {{ (item.sub_menu_items || []).length }} / 5</span><button class="btn" :disabled="(item.sub_menu_items || []).length >= 5" @click="addChild(item)"><SvgIcon name="plus" :size="13" />添加子项</button></div>
-                      <Draggable v-model="item.sub_menu_items" :item-key="sortKey" tag="div" class="sub-menu-sort-list sortable-list" handle=".child-drag-handle" :animation="220" easing="cubic-bezier(.2, .8, .2, 1)" ghost-class="sort-placeholder" chosen-class="sort-chosen" drag-class="sort-dragging" fallback-class="sort-floating" :force-fallback="true" :fallback-on-body="true" :fallback-tolerance="3" :swap-threshold="0.58">
+                      <Draggable v-model="item.sub_menu_items" :item-key="sortKey" tag="div" class="sub-menu-sort-list sortable-list" handle=".child-drag-handle" :animation="220" easing="cubic-bezier(.2, .8, .2, 1)" ghost-class="sort-placeholder" chosen-class="sort-chosen" drag-class="sort-dragging" :fallback-tolerance="3" :swap-threshold="0.58">
                         <template #item="{ element: child, index: childIndex }">
                         <article :class="['accordion-item child', { open: childOpen.has(sortKey(child)) }]">
                         <div class="accordion-header">
-                          <button class="accordion-toggle" @click="setChildOpen(child)"><span class="chevron">›</span><span class="row-copy"><b>{{ childIndex + 1 }}. {{ child.name || '未命名子项' }}</b><small>{{ typeLabel(child.type) }} · {{ childSummary(child) }}</small></span></button>
+                          <button class="icon-btn drag-handle child-drag-handle" title="按住并拖动整项排序"><SvgIcon name="grip" :size="13" /></button>
+                          <button class="accordion-toggle" @click="setChildOpen(child)"><span class="chevron">›</span><span class="item-type-icon"><SvgIcon :name="menuTypeIcon(child.type)" :size="15" /></span><span class="row-copy"><b>{{ childIndex + 1 }}. {{ child.name || '未命名子项' }}</b><small>{{ typeLabel(child.type) }} · {{ childSummary(child) }}</small></span></button>
                           <div class="row-actions">
-                            <button class="icon-btn drag-handle child-drag-handle" title="按住并拖动整项排序"><SvgIcon name="grip" :size="13" /></button>
+                            <button class="btn edit-btn" @click="setChildOpen(child)">{{ childOpen.has(sortKey(child)) ? '收起' : '编辑' }}</button>
                             <button class="icon-btn" title="上移" :disabled="childIndex === 0" @click="moveChild(item, childIndex, -1)">↑</button>
                             <button class="icon-btn" title="下移" :disabled="childIndex === item.sub_menu_items.length - 1" @click="moveChild(item, childIndex, 1)">↓</button>
                             <button class="icon-btn danger" title="删除" @click="removeChild(item, childIndex)"><SvgIcon name="trash" :size="13" /></button>
@@ -815,6 +809,7 @@ onMounted(async () => {
               </template>
             </Draggable>
             <div v-else class="empty-state">暂无自定义菜单</div>
+            <button class="add-row" :disabled="menuDraft.length >= 10" @click="addMenu"><SvgIcon name="plus" :size="16" />新增菜单项</button>
           </div>
         </section>
 
@@ -829,21 +824,22 @@ onMounted(async () => {
                 <button v-for="item in SCOPES" :key="item.key" :class="{ active: scope === item.key }" @click="changeScope(item.key)">{{ item.label }}</button>
               </div>
               <button class="btn" :disabled="busy" @click="loadPanels()">查询</button>
-              <button class="btn" :disabled="busy" @click="addPanel"><SvgIcon name="plus" :size="14" />添加指令</button>
               <button class="btn primary" :disabled="busy || !panelChanges" @click="savePanels"><SvgIcon name="save" :size="14" />保存更改</button>
             </div>
           </header>
           <div class="surface-body">
-            <Draggable v-if="panels.length" v-model="panels" :item-key="draftKey" tag="div" class="panel-list sortable-list" handle=".panel-drag-handle" :animation="220" easing="cubic-bezier(.2, .8, .2, 1)" ghost-class="sort-placeholder" chosen-class="sort-chosen" drag-class="sort-dragging" fallback-class="sort-floating" :force-fallback="true" :fallback-on-body="true" :fallback-tolerance="3" :swap-threshold="0.58" :scroll-sensitivity="70" :scroll-speed="12" @end="finishPanelSort">
+            <Draggable v-if="panels.length" v-model="panels" :item-key="draftKey" tag="div" class="panel-list sortable-list" handle=".panel-drag-handle" :animation="220" easing="cubic-bezier(.2, .8, .2, 1)" ghost-class="sort-placeholder" chosen-class="sort-chosen" drag-class="sort-dragging" :fallback-tolerance="3" :swap-threshold="0.58" :scroll-sensitivity="70" :scroll-speed="12" @end="finishPanelSort">
               <template #item="{ element: record, index }">
               <article :class="['panel-row', { open: panelOpen.has(draftKey(record)), dirty: draftChanged(record) && !record._deleted, deleting: record._deleted }]">
                 <div class="panel-row-header">
+                  <button v-if="!record._deleted" class="icon-btn drag-handle panel-drag-handle" title="按住并拖动整项排序"><SvgIcon name="grip" :size="14" /></button>
                   <button class="accordion-toggle" :disabled="record._deleted" @click="setPanelOpen(record)">
                     <span class="chevron">›</span>
+                    <span class="item-type-icon"><SvgIcon :name="menuTypeIcon(panelItem(record).type)" :size="17" /></span>
                     <span class="row-copy"><b>{{ panelTitle(record) }}</b><small>{{ panelSummary(record) }}</small></span>
                     <span v-if="record._deleted" class="draft-badge danger">待删除</span><span v-else-if="record._isNew" class="draft-badge">新建草稿</span><span v-else-if="record._dirty || record._targetDirty" class="draft-badge">待保存</span>
                   </button>
-                  <button v-if="!record._deleted" class="icon-btn drag-handle panel-drag-handle" title="按住并拖动整项排序"><SvgIcon name="grip" :size="14" /></button>
+                  <button v-if="!record._deleted" class="btn edit-btn" @click="setPanelOpen(record)">{{ panelOpen.has(draftKey(record)) ? '收起' : '编辑' }}</button>
                   <button :class="['btn', record._deleted ? '' : 'danger']" @click="removePanel(record)">{{ record._deleted ? '撤销删除' : '删除' }}</button>
                 </div>
                 <div v-if="panelOpen.has(draftKey(record)) && !record._deleted" class="panel-body">
@@ -874,6 +870,7 @@ onMounted(async () => {
               </template>
             </Draggable>
             <div v-else class="empty-state">当前场景暂无指令</div>
+            <button class="add-row" @click="addPanel"><SvgIcon name="plus" :size="16" />创建指令面板</button>
           </div>
         </section>
       </main>

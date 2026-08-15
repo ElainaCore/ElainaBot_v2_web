@@ -141,7 +141,7 @@ function addBot() {
   if (!Array.isArray(d.bots)) d.bots = []
   d.bots.push({
     appid: '', secret: '', api_version: 'new', robot_qq: '', owner_ids: [],
-    websocket: { enabled: true, custom_url: '', reconnect_interval: 5, max_reconnects: -1, log_level: 'INFO', identify: { name: '' } },
+    websocket: { enabled: true, subscribe_channel_events: false, custom_url: '', reconnect_interval: 5, max_reconnects: -1, identify: { name: '' } },
     message: { use_markdown: true, markdown_suffix: '', button_enter_to_send: false, send_default_response: false, default_response_excluded_regex: [] },
     identity: { use_union_id_for_group: false, use_union_id_for_channel: false },
     welcome: { group_welcome: false, new_user_welcome: false, friend_add_message: false },
@@ -361,10 +361,10 @@ onUnmounted(stopQrBindPoll)
             <div class="vis-section">WebSocket</div>
             <div class="vis-grid">
               <div class="vis-field"><label>启用 WS</label><label class="vis-switch"><input type="checkbox" :checked="(currentBot.websocket||{}).enabled" @change="updateBotNested(botIndex, 'websocket', 'enabled', $event.target.checked)" /><span /></label></div>
+              <div class="vis-field"><label>订阅频道消息</label><label class="vis-switch"><input type="checkbox" :checked="(currentBot.websocket||{}).subscribe_channel_events === true" @change="updateBotNested(botIndex, 'websocket', 'subscribe_channel_events', $event.target.checked)" /><span /></label></div>
               <div class="vis-field"><label>自定义 WS 地址</label><input :value="(currentBot.websocket||{}).custom_url || ''" @input="updateBotNestedStr(botIndex, 'websocket', 'custom_url', $event)" /></div>
               <div class="vis-field"><label>重连间隔(秒)</label><input type="number" :value="(currentBot.websocket||{}).reconnect_interval || 5" @input="updateBotNestedNum(botIndex, 'websocket', 'reconnect_interval', $event)" /></div>
               <div class="vis-field"><label>最大重连次数</label><input type="number" :value="(currentBot.websocket||{}).max_reconnects || -1" @input="updateBotNestedNum(botIndex, 'websocket', 'max_reconnects', $event)" /></div>
-              <div class="vis-field"><label>日志等级</label><select :value="(currentBot.websocket||{}).log_level || 'INFO'" @change="updateBotNested(botIndex, 'websocket', 'log_level', $event.target.value)"><option>DEBUG</option><option>INFO</option><option>WARNING</option><option>ERROR</option></select></div>
               <div class="vis-field"><label>Identify 客户端名称</label><select :value="((currentBot.websocket||{}).identify||{}).name || 'ElainaBot'" @change="updateBotDeepNested(botIndex, 'websocket', 'identify', 'name', $event.target.value)"><option value="ElainaBot">ElainaBot (默认)</option><option value="WorkBuddy">WorkBuddy</option><option value="OpenClaw">OpenClaw</option><option value="Hermes">Hermes</option><option value="QClaw">QClaw</option></select></div>
             </div>
             <div class="vis-section">消息处理</div>
