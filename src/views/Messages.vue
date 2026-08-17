@@ -68,6 +68,13 @@ const isCustomSendMode = computed(() => sendMode.value === 'custom_msg_id' || se
 
 const apiChatType = computed(() => (chatType.value === 'full_access' || chatType.value === 'remark') ? 'group' : chatType.value)
 const groupRoles = ref({})
+const botIsGroupAdmin = ref(false)
+const muteModalVisible = ref(false)
+const muteTarget = ref(null)
+const muteMinutes = ref(30)
+const muting = ref(false)
+const muteError = ref('')
+const groupActionMessage = ref('')
 const remarkInput = ref('')
 const remarkQqInput = ref('')
 const remarkEditing = ref(null)
@@ -450,19 +457,65 @@ function roleClass(uid) {
   return 'role-member'
 }
 function isBot(uid) { return !!memberInfo(uid).is_bot }
+function canMuteMember(m) {
+  if (!botIsGroupAdmin.value || apiChatType.value !== 'group' || m.is_self || !m.user_id || isBot(m.user_id)) return false
+  return !['owner', 'admin'].includes(String(memberInfo(m.user_id).role || ''))
+}
+function currentAppid(m = null) { return String(m?.appid || current.value?.appid || app.currentBotId || '') }
+function openMuteModal(m) {
+  if (!canMuteMember(m)) return
+  muteTarget.value = m
+  muteMinutes.value = 30
+  muteError.value = ''
+  muteModalVisible.value = true
+}
+function closeMuteModal() {
+  if (muting.value) return
+  muteModalVisible.value = false
+  muteTarget.value = null
+  muteError.value = ''
+}
+async function submitMute() {
+  if (!muteTarget.value || muting.value) return
+  muting.value = true
+  muteError.value = ''
+  groupActionMessage.value = ''
+  try {
+    const res = await axios.post('/api/message/group-member/mute', {
+      group_id: current.value?.chat_id || '',
+      user_id: muteTarget.value.user_id,
+      appid: currentAppid(muteTarget.value),
+      minutes: muteMinutes.value,
+    })
+    groupActionMessage.value = res.data?.message || '禁言成功'
+    muteModalVisible.value = false
+    muteTarget.value = null
+  } catch (e) {
+    muteError.value = e.response?.data?.message || e.message || '禁言操作失败'
+  } finally {
+    muting.value = false
+  }
+}
 
 const _rolesCache = {}
 const _ROLES_CACHE_TTL = 120000
-async function fetchGroupRoles(groupId) {
-  if (!groupId) { groupRoles.value = {}; return }
-  const cached = _rolesCache[groupId]
-  if (cached && Date.now() - cached.ts < _ROLES_CACHE_TTL) { groupRoles.value = cached.data; return }
+async function fetchGroupRoles(groupId, appid = '') {
+  if (!groupId) { groupRoles.value = {}; botIsGroupAdmin.value = false; return }
+  const cacheKey = `${appid}:${groupId}`
+  const cached = _rolesCache[cacheKey]
+  if (cached && Date.now() - cached.ts < _ROLES_CACHE_TTL) {
+    groupRoles.value = cached.data
+    botIsGroupAdmin.value = cached.botIsAdmin
+    return
+  }
   try {
-    const res = await axios.post('/api/message/group-roles', { group_id: groupId })
+    const res = await axios.post('/api/message/group-roles', { group_id: groupId, appid })
     const data = res.data?.data || {}
-    _rolesCache[groupId] = { data, ts: Date.now() }
+    const botIsAdmin = res.data?.bot_is_admin === true
+    _rolesCache[cacheKey] = { data, botIsAdmin, ts: Date.now() }
     groupRoles.value = data
-  } catch { groupRoles.value = {} }
+    botIsGroupAdmin.value = botIsAdmin
+  } catch { groupRoles.value = {}; botIsGroupAdmin.value = false }
 }
 
 async function setRemark() {
@@ -541,7 +594,7 @@ let _selectId = 0
 async function selectChat(chat) {
   const myId = ++_selectId
   current.value = chat; msgText.value = ''; sendErr.value = ''; imgFile.value = null; quotedMsg.value = null
-  hasMore.value = true; oldestDate.value = ''; loadingOlder.value = false; groupRoles.value = {}
+  hasMore.value = true; oldestDate.value = ''; loadingOlder.value = false; groupRoles.value = {}; botIsGroupAdmin.value = false; groupActionMessage.value = ''
   if (isMobile.value) mobileView.value = 'chat'
   history.value = []
   try {
@@ -552,7 +605,7 @@ async function selectChat(chat) {
     resolveMessageReferences(msgs)
     collectMentions(msgs)
     history.value = msgs; lastMsgId.value = res.data?.data?.last_msg_id || ''
-    if (apiChatType.value === 'group') fetchGroupRoles(chat.chat_id)
+    if (apiChatType.value === 'group') fetchGroupRoles(chat.chat_id, currentAppid())
     oldestDate.value = res.data?.data?.oldest_date || ''
     hasMore.value = res.data?.data?.has_more !== false
     await nextTick(); scrollBottom(); watchImgLoads()
@@ -630,6 +683,9 @@ async function refreshGroupInfo() {
   groupRefreshError.value = ''
   try {
     await refreshGroup(chat)
+    const cacheKey = `${currentAppid()}:${chat.chat_id}`
+    delete _rolesCache[cacheKey]
+    await fetchGroupRoles(chat.chat_id, currentAppid())
   } catch (e) {
     groupRefreshError.value = e.response?.data?.message || e.message || '群信息更新失败'
   } finally {
@@ -796,7 +852,7 @@ async function sendMsg() {
 }
 
 watch(msgType, (v) => { if (v === 'markdown' && quotedMsg.value) msgType.value = 'text' })
-watch(chatType, () => { current.value = null; quotedMsg.value = null; history.value = []; chats.value = []; lastMsgId.value = ''; oldestDate.value = ''; hasMore.value = true; page.value = 1; remarkEditing.value = null; groupRoles.value = {}; fetchChats() })
+watch(chatType, () => { current.value = null; quotedMsg.value = null; history.value = []; chats.value = []; lastMsgId.value = ''; oldestDate.value = ''; hasMore.value = true; page.value = 1; remarkEditing.value = null; groupRoles.value = {}; botIsGroupAdmin.value = false; groupActionMessage.value = ''; fetchChats() })
 let _searchTimer = null
 watch(chatSearch, () => { if (_searchTimer) clearTimeout(_searchTimer); _searchTimer = setTimeout(() => { _searchTimer = null; page.value = 1; fetchChats() }, 300) })
 watch(() => app.currentBotId, () => { current.value = null; quotedMsg.value = null; history.value = []; lastMsgId.value = ''; oldestDate.value = ''; hasMore.value = true; page.value = 1; fetchChats() })
@@ -887,6 +943,7 @@ onUnmounted(() => { _unmounted = true; off('new_log', onNewLog); off('open', onW
               </button>
             </span>
             <span v-if="groupRefreshError" class="group-refresh-error">{{ groupRefreshError }}</span>
+            <span v-else-if="groupActionMessage" class="group-action-message">{{ groupActionMessage }}</span>
           </div>
           <div class="history-body" ref="historyRef" @scroll="onHistoryScroll">
             <div v-if="loadingOlder" class="history-hint loading-older"><span class="load-spinner"></span>正在加载历史消息...</div>
@@ -941,7 +998,12 @@ onUnmounted(() => { _unmounted = true; off('new_log', onNewLog); off('open', onW
                     <div v-else v-html="m._html" style="word-break:break-all;overflow-wrap:anywhere;white-space:pre-wrap" @click="onBubbleClick" />
                   </div>
                   <div class="bubble-actions">
-                    <button v-if="canQuote(m)" class="action-btn" title="引用这条消息" @click="quoteMsg(m)">引</button>
+                    <button v-if="canMuteMember(m)" class="action-btn mute" title="禁言该成员" aria-label="禁言该成员" @click="openMuteModal(m)">
+                      <svg class="action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="m22 9-6 6"/><path d="m16 9 6 6"/></svg>
+                    </button>
+                    <button v-if="canQuote(m)" class="action-btn" title="引用这条消息" aria-label="引用这条消息" @click="quoteMsg(m)">
+                      <svg class="action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></svg>
+                    </button>
                     <button class="action-btn" title="原始数据" @click="showRaw(m)">{ }</button>
                     <button v-if="canRecall(m) && !m._recalled" class="action-btn recall" :disabled="recalling === m.message_id" title="撤回" @click="recallMsg(m)">
                       {{ recalling === m.message_id ? '...' : '↩' }}
@@ -1070,6 +1132,28 @@ onUnmounted(() => { _unmounted = true; off('new_log', onNewLog); off('open', onW
         <n-input v-model:value="addRemarkOpenid" placeholder="群 OpenID" style="margin-bottom:8px" autofocus />
         <n-input v-model:value="addRemarkName" placeholder="备注名称" style="margin-bottom:8px" />
         <n-input v-model:value="addRemarkQq" placeholder="群号（可选，填写后显示群头像）" @keydown.enter="submitAddRemark(); addRemarkModalVisible = false" />
+      </div>
+    </n-modal>
+
+    <n-modal v-model:show="muteModalVisible" preset="card" title="群成员禁言" :mask-closable="!muting" style="width:min(420px, calc(100vw - 32px))" @close="closeMuteModal">
+      <div v-if="muteTarget" class="mute-dialog">
+        <div class="mute-member">
+          <img v-if="muteTarget.appid && muteTarget.user_id" :src="avatarUrl(muteTarget.appid, muteTarget.user_id)" class="mute-avatar" @error="e => e.target.style.display='none'" />
+          <div>
+            <div class="mute-name">{{ muteTarget.nickname || '未知用户' }}</div>
+            <div class="mute-openid">{{ muteTarget.user_id }}</div>
+          </div>
+        </div>
+        <div class="mute-label">禁言时长</div>
+        <div class="mute-presets">
+          <button v-for="item in [{ label: '10 分钟', value: 10 }, { label: '30 分钟', value: 30 }, { label: '1 小时', value: 60 }, { label: '1 天', value: 1440 }]" :key="item.value" :class="['mute-preset', { active: muteMinutes === item.value }]" @click="muteMinutes = item.value">{{ item.label }}</button>
+        </div>
+        <label class="mute-custom"><span>自定义分钟</span><input v-model.number="muteMinutes" type="number" min="1" max="43200" /></label>
+        <div v-if="muteError" class="mute-error">{{ muteError }}</div>
+        <div class="mute-actions">
+          <button class="mute-btn ghost" :disabled="muting" @click="closeMuteModal">取消</button>
+          <button class="mute-btn primary" :disabled="muting || muteMinutes < 1 || muteMinutes > 43200" @click="submitMute">{{ muting ? '处理中...' : '确认禁言' }}</button>
+        </div>
       </div>
     </n-modal>
   </div>
@@ -1904,9 +1988,19 @@ onUnmounted(() => { _unmounted = true; off('new_log', onNewLog); off('open', onW
   color:var(--accent);
   border-color:var(--accent)
 }
+.action-icon {
+  display:block;
+  width:12px;
+  height:12px;
+  flex:none
+}
 .action-btn.recall:hover:not(:disabled) {
   color:var(--danger);
   border-color:var(--danger)
+}
+.action-btn.mute:hover:not(:disabled) {
+  color:#d97706;
+  border-color:#d97706
 }
 .action-btn:disabled {
   opacity:.4;
@@ -2248,6 +2342,29 @@ onUnmounted(() => { _unmounted = true; off('new_log', onNewLog); off('open', onW
   font-size:11px;
   font-weight:400
 }
+.group-action-message {
+  color:#16803a;
+  font-size:11px;
+  font-weight:500
+}
+.mute-dialog { display:flex; flex-direction:column; gap:14px }
+.mute-member { display:flex; align-items:center; gap:10px; min-width:0 }
+.mute-avatar { width:40px; height:40px; border-radius:50%; object-fit:cover; flex-shrink:0 }
+.mute-name { color:var(--text); font-size:14px; font-weight:600 }
+.mute-openid { color:var(--text3); font:11px monospace; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:320px }
+.mute-label { color:var(--text2); font-size:12px; font-weight:600 }
+.mute-presets { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:6px }
+.mute-preset { height:32px; border:1px solid var(--border); border-radius:4px; background:var(--bg3); color:var(--text2); cursor:pointer; font-size:12px }
+.mute-preset:hover, .mute-preset.active { color:var(--accent); border-color:var(--accent); background:var(--accent-soft) }
+.mute-custom { display:flex; align-items:center; justify-content:space-between; gap:12px; color:var(--text2); font-size:12px }
+.mute-custom input { width:120px; height:30px; box-sizing:border-box; border:1px solid var(--border); border-radius:4px; background:var(--bg2); color:var(--text); padding:0 8px; outline:none }
+.mute-custom input:focus { border-color:var(--accent) }
+.mute-error { color:var(--danger); font-size:12px }
+.mute-actions { display:flex; justify-content:flex-end; gap:8px; flex-wrap:wrap; margin-top:2px }
+.mute-btn { height:32px; border-radius:4px; padding:0 12px; border:1px solid var(--border); cursor:pointer; font-size:12px }
+.mute-btn:disabled { opacity:.45; cursor:default }
+.mute-btn.ghost { background:var(--bg2); color:var(--text2) }
+.mute-btn.primary { background:var(--accent); color:#fff; border-color:var(--accent) }
 .refresh-msgid-btn {
   background:none;
   border:none;

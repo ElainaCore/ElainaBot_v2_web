@@ -30,6 +30,8 @@
 .bot-picker { display: flex; align-items: center; gap: 8px; margin-left: auto; padding: 0 0 7px 14px; color: var(--fc-muted); }
 .bot-picker > span { flex: 0 0 auto; white-space: nowrap; }
 .bot-picker select { width: min(250px, 27vw); }
+.transfer-btn { min-height: 32px; padding-inline: 10px; white-space: nowrap; }
+.hidden-file-input { display: none; }
 .config-workspace { display: grid; grid-template-columns: minmax(360px, .72fr) minmax(600px, 1.28fr); gap: 22px; align-items: start; }
 .function-config .preview-panel { min-width: 0; overflow: hidden; border: 1px solid var(--fc-border); border-radius: 12px; background: #f7f8fa; box-shadow: 0 8px 26px rgba(20, 31, 55, .06); }
 .preview-title { display: flex; align-items: center; min-height: 58px; padding: 0 22px; border-bottom: 1px solid rgba(223, 228, 236, .85); color: var(--fc-text); background: #fff; font-size: 18px; font-weight: 700; }
@@ -159,8 +161,8 @@
 }
 @media (max-width: 680px) {
   .feature-tabs { flex-wrap: wrap; }
-  .bot-picker { width: 100%; margin-left: 0; padding: 7px 0; border-top: 1px solid var(--fc-border); }
-  .bot-picker select { min-width: 0; flex: 1; width: auto; }
+  .bot-picker { width: 100%; margin-left: 0; padding: 7px 0; flex-wrap: wrap; border-top: 1px solid var(--fc-border); }
+  .bot-picker select { min-width: 0; flex: 1 1 calc(100% - 55px); width: auto; }
   .surface-header { align-items: flex-start; flex-direction: column; }
   .panel-toolbar { width: 100%; }
   .scope-switch { width: 100%; overflow-x: auto; }

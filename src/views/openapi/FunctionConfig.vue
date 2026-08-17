@@ -27,6 +27,7 @@ const activeTab = ref('menu')
 const bots = ref([])
 const appid = ref('')
 const busy = ref(false)
+const importInput = ref(null)
 const notice = ref({ text: '', type: '' })
 const menuDraft = ref([])
 const menuOriginal = ref([])
@@ -85,6 +86,62 @@ async function api(method, url, config = {}) {
 
 function withAppid(params = {}) {
   return { appid: appid.value, ...params }
+}
+
+async function exportConfig() {
+  if (!appid.value) return showNotice('请先选择机器人', 'error')
+  if ((menuDirty.value || panelChanges.value) && !confirm('当前未保存的修改不会导出，是否继续导出已保存配置？')) return
+  try {
+    busy.value = true
+    const config = await api('get', '/api/openapi/menu-panel/config/export', { params: withAppid() })
+    const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'elainabot-function-config.json'
+    link.click()
+    URL.revokeObjectURL(url)
+    showNotice('功能配置已导出', 'success')
+  } catch (error) {
+    showNotice(errorText(error), 'error')
+  } finally {
+    busy.value = false
+  }
+}
+
+function chooseImport() {
+  if (!appid.value) return showNotice('请先选择机器人', 'error')
+  importInput.value?.click()
+}
+
+async function importConfig(event) {
+  const input = event.target
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+  let config
+  try {
+    config = JSON.parse(await file.text())
+  } catch {
+    return showNotice('导入文件不是有效的 JSON', 'error')
+  }
+  const target = currentBot.value.name || appid.value
+  if (!confirm('导入将覆盖机器人“' + target + '”当前的全部菜单和指令配置。导出文件不绑定来源机器人，确认继续？')) return
+  try {
+    busy.value = true
+    const result = await api('post', '/api/openapi/menu-panel/config/import', {
+      data: { appid: appid.value, config },
+    })
+    panels.value = []
+    panelsLoadedKey.value = ''
+    await loadMenu(true)
+    if (activeTab.value === 'panels') await loadPanels({ silent: true })
+    showNotice('功能配置已导入当前机器人（新建 ' + (result?.created_panels || 0) + ' 个指令面板）', 'success')
+  } catch (error) {
+    showNotice(errorText(error), 'error')
+  } finally {
+    busy.value = false
+  }
 }
 
 function menuDefault() {
@@ -676,6 +733,9 @@ onMounted(async () => {
         <select v-model="appid" aria-label="选择机器人" :disabled="busy" @change="changeBot">
           <option v-for="bot in bots" :key="bot.appid" :value="bot.appid">{{ bot.name }} · {{ bot.appid }}</option>
         </select>
+        <button class="btn transfer-btn" title="导出当前机器人的功能配置 JSON" :disabled="busy || !appid" @click="exportConfig"><SvgIcon name="cloud-download" :size="14" />导出 JSON</button>
+        <button class="btn transfer-btn" title="将 JSON 导入当前选中的机器人" :disabled="busy || !appid" @click="chooseImport"><SvgIcon name="upload" :size="14" />导入 JSON</button>
+        <input ref="importInput" class="hidden-file-input" type="file" accept="application/json,.json" @change="importConfig" />
         <button class="icon-btn" title="刷新" :disabled="busy" @click="refreshAll"><SvgIcon name="refresh" :size="15" /></button>
       </div>
     </nav>
