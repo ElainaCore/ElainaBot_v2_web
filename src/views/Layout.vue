@@ -172,7 +172,6 @@ const webhookDisplayUrl = computed(() => {
   return `${proto}//${host}${skipPort ? '' : ':' + port}/?appid=${detailData.value.appid || detailBot.value?.appid || ''}`
 })
 const webhookPortOk = computed(() => ['80','443','8080','8443'].includes(String(location.port || (location.protocol === 'https:' ? '443' : '80'))))
-const webhookIsHttps = computed(() => location.protocol === 'https:')
 
 async function checkDefaultPassword() {
   try {
@@ -490,7 +489,6 @@ onUnmounted(() => {
               </div>
               <div style="margin-top:4px;font-size:11px;color:#999;line-height:1.5">
                 <div>Webhook 接收地址仅允许 80、443、8080、8443 端口<span v-if="!webhookPortOk" style="color:#e88080">（当前端口不在允许范围内，如果已反代请无视）</span></div>
-                <div v-if="!webhookIsHttps">当前为 HTTP 协议，需修改开放平台前端才可使用，具体请自行琢磨</div>
               </div>
             </n-descriptions-item>
             <n-descriptions-item v-if="detailSuccess && detailData.developer" label="开发者">{{ detailData.developer }}</n-descriptions-item>

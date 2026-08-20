@@ -1132,10 +1132,14 @@ function fillSuggestedWebhook() {
   if (webhookSuggest.url) connectionDraft.webhook = webhookSuggest.url
 }
 
+function isValidWebhookUrl(url) {
+  return /^https?:\/\//i.test(url)
+}
+
 async function checkWebhookUrl() {
   const url = connectionDraft.webhook.trim()
-  if (!url.startsWith('https://')) {
-    pushToast('回调地址必须以 https:// 开头')
+  if (!isValidWebhookUrl(url)) {
+    pushToast('回调地址必须以 http:// 或 https:// 开头')
     return
   }
   webhookCheck.checking = true
@@ -1170,8 +1174,8 @@ async function loadNotifications() {
 
 async function saveConnection() {
   if (connectionDraft.mode === 'Webhook') {
-    if (!connectionDraft.webhook.trim().startsWith('https://')) {
-      pushToast('回调地址必须以 https:// 开头')
+    if (!isValidWebhookUrl(connectionDraft.webhook.trim())) {
+      pushToast('回调地址必须以 http:// 或 https:// 开头')
       return
     }
     connectionDraft.saving = true
@@ -1959,7 +1963,7 @@ defineExpose({ reload: loadStatus })
                       </button>
                       <button :class="['event-channel-card', { active: connectionDraft.mode === 'Webhook' }]" type="button" @click="connectionDraft.mode = 'Webhook'">
                         <AppIcon name="external" :size="23" />
-                        <span><b>Webhook</b><small>事件推送至你配置的 HTTPS 服务上，适合提供公开服务的机器人使用，运维更可靠</small></span>
+                        <span><b>Webhook</b><small>事件推送至你配置的 HTTP/HTTPS 服务上，适合提供公开服务的机器人使用，运维更可靠</small></span>
                         <i>✓</i>
                       </button>
                     </div>
@@ -1967,7 +1971,7 @@ defineExpose({ reload: loadStatus })
                       <AppIcon name="info" :size="15" /> 如果你是想用于连接 OpenClaw 等类似的 AI Agent 服务，在服务提供方没有明确说明和指引的前提下，选用 WebSocket 即可。
                     </div>
                     <div v-else class="event-webhook-field">
-                      <span>回调地址（HTTPS 地址）</span>
+                      <span>回调地址（HTTP/HTTPS 地址）</span>
                       <div class="webhook-input-row">
                         <input v-model="connectionDraft.webhook" type="url" placeholder="设置回调地址并切换至 Webhook 接入" />
                         <button v-if="webhookSuggest.available" class="btn ghost sm" type="button" title="填入本机回调地址" @click="fillSuggestedWebhook">自动填写</button>
