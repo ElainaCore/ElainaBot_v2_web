@@ -11,6 +11,9 @@ import './assets/global.css'
 import './assets/design.css'
 import App from './App.vue'
 import router from './router'
+import { installWebPanelThemeApi } from './utils/webPanelTheme'
+
+installWebPanelThemeApi()
 
 const app = createApp(App)
 app.use(createPinia())

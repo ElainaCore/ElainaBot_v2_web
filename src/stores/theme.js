@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed, nextTick } from 'vue'
+import { notifyWebPanelThemeChange } from '../utils/webPanelTheme'
 
 // 根据主色生成一套亮色主题
 function shade(hex, pct) {
@@ -130,6 +131,7 @@ export const useThemeStore = defineStore('theme', () => {
       try { vtAnim?.cancel() } catch {}
       vtAnim = null
       if (activeVT === vt) activeVT = null
+      notifyWebPanelThemeChange()
     }
     // 兜底: 过渡异常卡住时强制结束, 恢复页面交互
     const watchdog = setTimeout(() => {
@@ -187,6 +189,7 @@ export const useThemeStore = defineStore('theme', () => {
       s.setProperty('--shadow-hover', '0 4px 10px rgba(16,24,40,.06), 0 10px 24px rgba(16,24,40,.08)')
     }
     document.documentElement.style.colorScheme = darkMode.value ? 'dark' : 'light'
+    notifyWebPanelThemeChange()
   }
 
   function naiveOverrides(t) {

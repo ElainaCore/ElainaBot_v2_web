@@ -119,7 +119,7 @@ const filtered = computed(() => {
   if (category.value) list = list.filter(i => i.category === category.value)
   const q = search.value.toLowerCase()
   if (q) list = list.filter(i => (i.name || '').toLowerCase().includes(q) || (i.description || '').toLowerCase().includes(q) || (i.author || '').toLowerCase().includes(q) || (i.tags || []).some(t => t.toLowerCase().includes(q)))
-  return list
+  return [...list.filter(i => i.has_update), ...list.filter(i => !i.has_update)]
 })
 
 const categories = computed(() => {
