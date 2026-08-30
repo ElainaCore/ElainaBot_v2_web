@@ -137,7 +137,7 @@ async function fetchAll() {
   loading.value = true
   try {
     const [s, t] = await Promise.all([axios.get('/api/plugins/scan-dirs'), axios.get('/api/modules/scan')])
-    dirs.value = (s.data.dirs || []).map(d => ({ ...d, files: d.files.map(f => ({ ...f, _toggling: false })) }))
+    dirs.value = (s.data.dirs || []).map(d => ({ ...d, _reloading: false, files: d.files.map(f => ({ ...f, _toggling: false })) }))
     modules.value = (t.data.modules || []).map(m => ({ ...m, _toggling: false, persist_enabled: m.persist_enabled ?? false }))
   } catch { msg.error('获取列表失败') } finally { loading.value = false }
 }
@@ -154,6 +154,24 @@ async function toggleFile(file, dir) {
       msg.success(`${file.name} 已${file.enabled ? '启用' : '禁用'}`)
     } else msg.error(res.data.message || '操作失败')
   } catch { msg.error('操作失败') } finally { file._toggling = false }
+}
+
+async function reloadPlugin(dir) {
+  if (!dir.enabled || dir._reloading) return
+  dir._reloading = true
+  try {
+    const res = await axios.post('/api/plugins/reload', { name: dir.directory })
+    if (!res.data.success) {
+      msg.error(res.data.message || '插件重载失败')
+      return
+    }
+    msg.success(res.data.message || `插件 ${dir.directory} 已重载`)
+    await fetchAll()
+  } catch (e) {
+    msg.error(e.normalizedMessage || e.message || '插件重载失败')
+  } finally {
+    dir._reloading = false
+  }
 }
 
 async function toggleModule(mod) {
@@ -346,6 +364,9 @@ onMounted(() => { appStore.fetchBots(); fetchAll() })
             <span v-if="d.is_large && d.meta?.author" class="p-meta-author">{{ d.meta.author }}</span>
             <span v-if="d.is_large && (d.meta?.description || d.description)" class="p-dir-desc">{{ d.meta?.description || d.description }}</span>
             <a v-if="d.is_large && d.meta?.github" class="p-meta-link" :href="d.meta.github" target="_blank" @click.stop title="GitHub"><SvgIcon name="globe" :size="12" /></a>
+            <button class="p-act-btn sm" :disabled="!d.enabled || d._reloading" :title="d.enabled ? '重载插件' : '插件未加载，无法重载'" @click.stop="reloadPlugin(d)">
+              <SvgIcon name="refresh" :size="13" :class="{ 'reload-spinning': d._reloading }" />
+            </button>
             <label v-if="d.is_large && entryFile(d)" class="p-switch-sm module-switch" :title="entryDisabled(d) ? '启用插件' : '禁用插件'">
               <input type="checkbox" :checked="!entryDisabled(d)" :disabled="entryFile(d)._toggling" @change="toggleDir(d)" /><span />
             </label>
@@ -983,6 +1004,18 @@ onMounted(() => { appStore.fetchBots(); fetchAll() })
 .p-act-btn:hover {
   color:var(--accent);
   border-color:var(--accent)
+}
+.p-act-btn:disabled {
+  opacity:.4;
+  cursor:default;
+  color:var(--text3);
+  border-color:var(--border)
+}
+.reload-spinning {
+  animation:plugin-reload-spin .7s linear infinite
+}
+@keyframes plugin-reload-spin {
+  to { transform:rotate(360deg) }
 }
 .p-modal-overlay {
   position:fixed;
