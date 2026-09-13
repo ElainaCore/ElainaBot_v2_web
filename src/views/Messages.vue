@@ -97,7 +97,7 @@ const MEDIA_RE = /\[(图片|语音|视频|文件|媒体|media)](\S+)/
 
 function handleResize() { isMobile.value = window.innerWidth < 768 }
 function goBackToList() { mobileView.value = 'list'; current.value = null }
-function selectMsgType(value) { if (value === 'markdown' && quotedMsg.value) return; msgType.value = value }
+function selectMsgType(value) { msgType.value = value }
 function avatarUrl(appid, uid) { return `https://q.qlogo.cn/qqapp/${appid}/${uid}/0` }
 function getBotAvatar(appid) { const bot = app.bots.find(b => b.appid === appid); return bot?.avatar || '' }
 function qqAvatar(qq) { return `http://q1.qlogo.cn/g?b=qq&nk=${qq}&s=100` }
@@ -177,7 +177,6 @@ function resolveMessageReferences(messages) {
 function quoteMsg(m) {
   if (!canQuote(m)) return
   quotedMsg.value = m
-  if (msgType.value === 'markdown') msgType.value = 'text'
 }
 function clearQuote() { quotedMsg.value = null }
 
@@ -851,7 +850,6 @@ async function sendMsg() {
   finally { sending.value = false }
 }
 
-watch(msgType, (v) => { if (v === 'markdown' && quotedMsg.value) msgType.value = 'text' })
 watch(chatType, () => { current.value = null; quotedMsg.value = null; history.value = []; chats.value = []; lastMsgId.value = ''; oldestDate.value = ''; hasMore.value = true; page.value = 1; remarkEditing.value = null; groupRoles.value = {}; botIsGroupAdmin.value = false; groupActionMessage.value = ''; fetchChats() })
 let _searchTimer = null
 watch(chatSearch, () => { if (_searchTimer) clearTimeout(_searchTimer); _searchTimer = setTimeout(() => { _searchTimer = null; page.value = 1; fetchChats() }, 300) })
