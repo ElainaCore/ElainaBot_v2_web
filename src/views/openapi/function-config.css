@@ -33,33 +33,33 @@
 .transfer-btn { min-height: 32px; padding-inline: 10px; white-space: nowrap; }
 .hidden-file-input { display: none; }
 .config-workspace { display: grid; grid-template-columns: minmax(360px, .72fr) minmax(600px, 1.28fr); gap: 22px; align-items: start; }
-.function-config .preview-panel { min-width: 0; overflow: hidden; border: 1px solid var(--fc-border); border-radius: 12px; background: #f7f8fa; box-shadow: 0 8px 26px rgba(20, 31, 55, .06); }
-.preview-title { display: flex; align-items: center; min-height: 58px; padding: 0 22px; border-bottom: 1px solid rgba(223, 228, 236, .85); color: var(--fc-text); background: #fff; font-size: 18px; font-weight: 700; }
-.phone-wrap { display: flex; justify-content: center; height: 600px; padding: 22px 52px 16px; background: #f7f7f8; }
-.phone-shell { display: grid; place-items: center; width: 280px; min-width: 280px; height: 526px; border: 1.3px solid rgba(255, 255, 255, .75); border-radius: 16px; background: rgba(255, 255, 255, .5); }
-.phone-screen { position: relative; width: 264px; height: 510px; overflow: hidden; border-radius: 8px; color: #000; background: #f1f1f1; }
-.phone-menu-header { display: flex; align-items: center; width: 100%; height: 46px; gap: 7px; padding: 0 10px; background: rgba(255, 255, 255, .97); }
+.function-config .preview-panel { min-width: 0; overflow: hidden; border: 1px solid var(--fc-border); border-radius: 12px; background: var(--fc-surface-soft); box-shadow: 0 8px 26px rgba(20, 31, 55, .06); }
+.preview-title { display: flex; align-items: center; min-height: 58px; padding: 0 22px; border-bottom: 1px solid var(--fc-border); color: var(--fc-text); background: var(--fc-surface); font-size: 18px; font-weight: 700; }
+.phone-wrap { display: flex; justify-content: center; height: 600px; padding: 22px 52px 16px; background: var(--fc-surface-soft); }
+.phone-shell { display: grid; place-items: center; width: 280px; min-width: 280px; height: 526px; border: 1.3px solid var(--fc-border); border-radius: 16px; background: color-mix(in srgb, var(--fc-surface) 72%, transparent); }
+.phone-screen { position: relative; width: 264px; height: 510px; overflow: hidden; border-radius: 8px; color: var(--fc-text); background: var(--fc-bg); }
+.phone-menu-header { display: flex; align-items: center; width: 100%; height: 46px; gap: 7px; padding: 0 10px; background: var(--fc-surface); }
 .phone-back { width: 12px; font-size: 25px; font-weight: 300; line-height: 1; transform: translateY(-1px); }
 .phone-header-avatar { display: grid; place-items: center; width: 20px; height: 20px; flex: 0 0 20px; border-radius: 50%; object-fit: cover; color: #fff; background: #8b9bd6; font-size: 9px; }
 .phone-menu-name { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 600; }
 .phone-more { width: 20px; font-size: 18px; text-align: center; }
-.phone-chat { position: absolute; inset: 46px 0 234px; padding: 15px 10px; background: #f2f2f4; }
+.phone-chat { position: absolute; inset: 46px 0 234px; padding: 15px 10px; background: var(--fc-bg); }
 .phone-time { margin-bottom: 10px; color: #aaa; text-align: center; font-size: 9px; }
-.phone-bubble { width: fit-content; max-width: 185px; padding: 7px 9px; border-radius: 3px 8px 8px; color: #505050; background: #fff; font-size: 10px; line-height: 1.45; }
-.phone-menu-strip { position: absolute; z-index: 2; bottom: 199px; left: 0; display: flex; align-items: center; width: 264px; height: 35px; gap: 6px; padding: 4px 10px 3px; overflow-x: auto; background: rgba(255, 255, 255, .99); scrollbar-width: none; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; touch-action: pan-y; cursor: grab; user-select: none; }
+.phone-bubble { width: fit-content; max-width: 185px; padding: 7px 9px; border-radius: 3px 8px 8px; color: var(--fc-text); background: var(--fc-surface); font-size: 10px; line-height: 1.45; }
+.phone-menu-strip { position: absolute; z-index: 2; bottom: 199px; left: 0; display: flex; align-items: center; width: 264px; height: 35px; gap: 6px; padding: 4px 10px 3px; overflow-x: auto; background: var(--fc-surface); scrollbar-width: none; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; touch-action: pan-y; cursor: grab; user-select: none; }
 .phone-menu-strip:active { cursor: grabbing; }
 .phone-menu-strip::-webkit-scrollbar { display: none; }
-.phone-menu-strip button { display: inline-flex; align-items: center; height: 28px; max-width: 112px; flex: 0 0 auto; gap: 5px; padding: 0 9px; overflow: hidden; border: 1px solid #e4e4e4; border-radius: 7px; color: #777; background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .04); font-size: 10px; }
+.phone-menu-strip button { display: inline-flex; align-items: center; height: 28px; max-width: 112px; flex: 0 0 auto; gap: 5px; padding: 0 9px; overflow: hidden; border: 1px solid var(--fc-border); border-radius: 7px; color: var(--fc-muted); background: var(--fc-surface); box-shadow: 0 1px 3px rgba(0, 0, 0, .04); font-size: 10px; }
 .phone-menu-strip button.right { margin-left: auto; }
 .phone-menu-strip button.active { border-color: #cfd8e8; color: #2e4d79; background: #f8fbff; }
 .phone-menu-strip button span { color: #1f2937; font-size: 14px; }
 .phone-menu-strip button b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 400; }
-.phone-menu-popover { position: absolute; z-index: 3; bottom: 234px; left: 10px; display: grid; min-width: 104px; max-width: 205px; overflow: hidden; border: 1px solid #e7e7e7; border-radius: 7px; background: #fff; box-shadow: 0 5px 16px rgba(0, 0, 0, .12); }
-.phone-menu-popover button { min-height: 31px; padding: 0 9px; border: 0; border-bottom: 1px solid #f0f0f0; color: #333; text-align: left; background: #fff; font-size: 10px; }
+.phone-menu-popover { position: absolute; z-index: 3; bottom: 234px; left: 10px; display: grid; min-width: 104px; max-width: 205px; overflow: hidden; border: 1px solid var(--fc-border); border-radius: 7px; background: var(--fc-surface); box-shadow: 0 5px 16px rgba(0, 0, 0, .12); }
+.phone-menu-popover button { min-height: 31px; padding: 0 9px; border: 0; border-bottom: 1px solid var(--fc-border); color: var(--fc-text); text-align: left; background: var(--fc-surface); font-size: 10px; }
 .phone-menu-popover button:last-child { border-bottom: 0; }
-.phone-keyboard { position: absolute; inset: auto 0 0; width: 264px; height: 199px; background: #fff url("https://q.qq.com/qqbot/static/images/9928d3083825978b42d8a7163f6794d8.png") center bottom / 264px 234px no-repeat; }
+.phone-keyboard { position: absolute; inset: auto 0 0; width: 264px; height: 199px; background-color: var(--fc-surface); background-image: url("https://q.qq.com/qqbot/static/images/9928d3083825978b42d8a7163f6794d8.png"); background-position: center bottom; background-size: 264px 234px; background-repeat: no-repeat; }
 .phone-cover { width: 264px; height: 320px; background: rgba(0, 0, 0, .5); }
-.phone-command-sheet { position: absolute; inset: auto 0 0; width: 264px; height: 405.8px; overflow: hidden; border-radius: 5px 5px 0 0; background: #fff; }
+.phone-command-sheet { position: absolute; inset: auto 0 0; width: 264px; height: 405.8px; overflow: hidden; border-radius: 5px 5px 0 0; background: var(--fc-surface); }
 .phone-handle { position: relative; width: 264px; height: 20px; }
 .phone-handle::after { position: absolute; top: 7px; left: 122px; width: 20px; height: 3px; border-radius: 4px; background: #d9d9d9; content: ""; }
 .phone-command-items { width: 264px; height: 186.8px; padding: 0 10px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: rgba(0, 0, 0, .18) transparent; }
@@ -67,11 +67,11 @@
 .phone-command-items::-webkit-scrollbar-thumb { border-radius: 4px; background: rgba(0, 0, 0, .18); }
 .phone-command-item { display: flex; align-items: center; justify-content: space-between; width: 244px; height: 31px; gap: 8px; }
 .phone-command-item span, .phone-command-item b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
-.phone-command-item span { max-width: 110px; color: #000; font-weight: 500; }
-.phone-command-item b { flex: 1; color: #a6a6a6; text-align: right; font-size: 10px; font-weight: 400; }
+.phone-command-item span { max-width: 110px; color: var(--fc-text); font-weight: 500; }
+.phone-command-item b { flex: 1; color: var(--fc-muted); text-align: right; font-size: 10px; font-weight: 400; }
 .phone-empty { padding: 28px 10px; color: #aaa; text-align: center; font-size: 11px; }
 .phone-command-sheet .phone-keyboard { height: 199px; }
-.preview-caption { height: 36px; padding-top: 15px; color: rgba(0, 0, 0, .3); text-align: center; font-size: 12px; }
+.preview-caption { height: 36px; padding-top: 15px; color: var(--fc-muted); text-align: center; font-size: 12px; }
 .config-editor { min-width: 0; }
 .config-surface { overflow: hidden; border: 1px solid var(--fc-border); border-radius: 12px; background: var(--fc-surface); box-shadow: 0 8px 26px rgba(20, 31, 55, .06); }
 .surface-header { display: flex; align-items: center; justify-content: space-between; gap: 14px; min-height: 78px; padding: 15px 18px; border-bottom: 1px solid var(--fc-border); }

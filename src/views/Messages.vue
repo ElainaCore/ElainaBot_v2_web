@@ -1027,7 +1027,7 @@ onUnmounted(() => { _unmounted = true; off('new_log', onNewLog); off('open', onW
             </div>
             <div class="send-toolbar">
               <div class="msg-type-btns">
-                <button v-for="opt in msgTypeOptions" :key="opt.value" type="button" class="msg-type-btn" :class="{ active: msgType === opt.value }" :disabled="opt.value === 'markdown' && !!quotedMsg" :title="opt.value === 'markdown' && quotedMsg ? '引用时不可用' : ''" @click="selectMsgType(opt.value)">{{ opt.label }}</button>
+                <button v-for="opt in msgTypeOptions" :key="opt.value" type="button" class="msg-type-btn" :class="{ active: msgType === opt.value }" @click="selectMsgType(opt.value)">{{ opt.label }}</button>
               </div>
               <select v-model="sendMode" class="send-type-select send-mode-select" title="发送方式"><option v-for="opt in sendModeOptions" :key="opt.value" :value="opt.value">{{ isMobile ? sendModeShortLabels[opt.value] : opt.label }}</option></select>
               <select v-if="msgType === 'media'" v-model="mediaFileType" class="send-type-select"><option value="1">图片</option><option value="2">视频</option><option value="3">语音</option><option value="4">文件</option></select>

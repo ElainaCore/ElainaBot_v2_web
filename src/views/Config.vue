@@ -446,6 +446,11 @@ onUnmounted(stopQrBindPoll)
             <div v-if="(settings.restart?.mode || 'daily') === 'daily'" class="vis-field"><label>重启时间</label><input :value="settings.restart?.daily_time || '04:00'" @input="updateSetting('restart', 'daily_time', $event)" placeholder="HH:MM" /></div>
             <div v-if="settings.restart?.mode === 'interval'" class="vis-field"><label>间隔小时</label><input type="number" :value="settings.restart?.interval_hours || 24" @input="updateSettingNum('restart', 'interval_hours', $event)" min="1" /></div>
           </div>
+          <div class="vis-card-title" style="margin-top:14px">自动更新</div>
+          <div class="vis-grid">
+            <div class="vis-field full"><label>启用自动更新</label><label class="vis-switch"><input type="checkbox" :checked="settings.auto_update?.enabled === true" @change="updateSettingBool('auto_update', 'enabled', $event)" /><span /></label></div>
+            <div class="vis-field"><label>检查间隔(秒)</label><input type="number" :value="settings.auto_update?.interval_seconds ?? 600" @input="updateSettingNum('auto_update', 'interval_seconds', $event)" min="60" /></div>
+          </div>
           <div class="vis-card-title" style="margin-top:14px">统计</div>
           <div class="vis-grid">
             <div class="vis-field full"><label>用户使用数据统计开关</label><label class="vis-switch"><input type="checkbox" :checked="settings.statistics?.enabled !== false" @change="updateSettingBool('statistics', 'enabled', $event)" /><span /></label></div>
