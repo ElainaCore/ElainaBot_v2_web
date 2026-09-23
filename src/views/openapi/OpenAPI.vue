@@ -305,10 +305,6 @@ function botStatusText(bot) {
 }
 
 function openBotCard(bot) {
-  if (isMember.value) {
-    pushToast('成员身份，暂不支持管理机器人设置')
-    return
-  }
   if (bot.revoking) {
     pushToast('该机器人正在注销中，撤回后可恢复正常')
     return
@@ -743,6 +739,7 @@ async function updatePrivateProtocol() {
 }
 
 async function openRevokeDialog() {
+  if (isMember.value) return
   revokeDialog.input = ''
   revokeDialog.loading = true
   revokeDialog.visible = true
@@ -760,6 +757,7 @@ async function openRevokeDialog() {
 }
 
 async function revokeCurrentBot() {
+  if (isMember.value) return
   if (revokeDialog.input.trim() !== cur.appid) return
   revokeDialog.loading = true
   try {
@@ -777,6 +775,7 @@ async function revokeCurrentBot() {
 }
 
 async function recoverBot(bot) {
+  if (isMember.value) return
   try {
     await v2('/cgi-bin/v2/info/delete', { op: 2, bot_appid: Number(bot.appid) })
     pushToast('已撤回注销')
@@ -1364,6 +1363,7 @@ async function copyAdvancedResult() {
 }
 
 async function resetSecret() {
+  if (isMember.value) return
   try {
     const r = await v2('/cgi-bin/v2/bot_dev_setting/secret/reset', { bot_appid: Number(cur.appid) })
     dev.secret = r.secret || r.app_secret || '重置成功, 请在弹窗查看'
@@ -1405,6 +1405,7 @@ async function openCreate() {
 }
 
 async function submitCreate() {
+  if (isMember.value) return
   if (!createDraft.name.trim() || !createDraft.avatarId || createLoading.value) return
   createLoading.value = true
   try {
@@ -1542,7 +1543,7 @@ defineExpose({ reload: loadStatus })
                     <span :class="{ dangerText: b.revoking || b.status === 4 }">{{ botStatusText(b) }}</span>
                   </div>
                 </div>
-                <span v-if="!b.revoking && b.status !== 4 && !isMember" class="bot-action"><AppIcon name="chevron" :size="18" /></span>
+                <span v-if="!b.revoking && b.status !== 4" class="bot-action"><AppIcon name="chevron" :size="18" /></span>
               </div>
               <div v-if="b.revoking" class="bot-card-foot">
                 <span>将于 <b>{{ formatDeleteDate(b.finalDeleteTime) }}</b> 永久删除</span>
@@ -1616,7 +1617,7 @@ defineExpose({ reload: loadStatus })
                   </div>
                 </div>
                 <div class="danger-actions-grid">
-                  <button class="danger-action remove" type="button" @click="openRevokeDialog">注销机器人</button>
+                  <button v-if="!isMember" class="danger-action remove" type="button" @click="openRevokeDialog">注销机器人</button>
                 </div>
               </template>
 
@@ -1891,7 +1892,7 @@ defineExpose({ reload: loadStatus })
                     </div>
                     <div class="row-value mono">
                       <span>{{ dev.secretShown ? dev.secret : '****************' }}</span>
-                      <button class="guide-copy-btn" type="button" aria-label="重置并查看 AppSecret" @click="secretResetDialog = true"><AppIcon name="eye" :size="15" class="guide-copy-icon" /></button>
+                      <button v-if="!isMember" class="guide-copy-btn" type="button" aria-label="重置并查看 AppSecret" @click="secretResetDialog = true"><AppIcon name="eye" :size="15" class="guide-copy-icon" /></button>
                     </div>
                   </div>
                 </div>
@@ -2247,7 +2248,7 @@ defineExpose({ reload: loadStatus })
     </div>
 
     <!-- 重置 AppSecret -->
-    <div v-if="secretResetDialog" class="v2-qr-overlay" @click.self="secretResetDialog = false">
+    <div v-if="secretResetDialog && !isMember" class="v2-qr-overlay" @click.self="secretResetDialog = false">
       <div class="form-modal compact-modal">
         <div class="v2-qr-title">重置 AppSecret</div>
         <div class="delete-warning">重置后旧的 AppSecret 立即失效。请及时更新已部署服务中的接入凭证。</div>
