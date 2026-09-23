@@ -143,7 +143,7 @@ async function fetchTables(path) {
 
 async function selectTable(t) {
   tableName.value = t.name; tableInfo.value = t; page.value = 1; mode.value = 'table'
-  sql.value = `SELECT * FROM "${t.name}" ORDER BY rowid DESC LIMIT 50`
+  sql.value = `SELECT * FROM "${t.name}" LIMIT 50`
   await fetchData()
 }
 
