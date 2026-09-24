@@ -77,7 +77,7 @@ async function handleLogin() {
 
     <section class="login-shell" aria-labelledby="login-title">
       <div class="brand-block">
-        <div class="brand-mark"><img src="/favicon.svg" alt="" /></div>
+        <div class="brand-mark"><img src="/favicon.png" alt="" /></div>
         <div class="brand-title-row">
           <h1 id="login-title">ElainaBot v2</h1>
         </div>

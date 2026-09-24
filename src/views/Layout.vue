@@ -16,7 +16,7 @@ const app = useAppStore()
 const auth = useAuthStore()
 const themeStore = useThemeStore()
 
-const logoSrc = '/web/favicon.svg'
+const logoSrc = '/web/favicon.png'
 const wsConnected = ref(false)
 const mobileMenuOpen = ref(false)
 const isMobile = ref(false)
