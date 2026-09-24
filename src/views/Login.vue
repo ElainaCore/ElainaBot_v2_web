@@ -76,32 +76,37 @@ async function handleLogin() {
     </div>
 
     <section class="login-shell" aria-labelledby="login-title">
-      <div class="brand-block">
-        <div class="brand-mark"><img src="/favicon.png" alt="" /></div>
-        <div class="brand-title-row">
-          <h1 id="login-title">ElainaBot v2</h1>
-        </div>
-        <p>QQ官方机器人框架 · 安全登录</p>
+      <div class="brand-art" aria-hidden="true">
+        <img src="https://i0.hdslb.com/bfs/openplatform/4fe813977dfcc5c17497e720bb51c8bbcf5230db.png" alt="" />
       </div>
-
-      <form class="login-form" @submit.prevent="handleLogin">
-        <label class="sr-only" for="admin-password">管理员密码</label>
-        <div class="password-field">
-          <SvgIcon class="field-icon" name="key" :size="22" />
-          <input id="admin-password" v-model="form.password" :type="passwordVisible ? 'text' : 'password'" name="password" autocomplete="current-password" placeholder="输入管理员密码" autofocus />
-          <button type="button" class="visibility-button" :title="passwordVisible ? '隐藏密码' : '显示密码'" :aria-label="passwordVisible ? '隐藏密码' : '显示密码'" @click="passwordVisible = !passwordVisible">
-            <SvgIcon :name="passwordVisible ? 'eye-off' : 'eye'" :size="21" />
-          </button>
+      <div class="login-body">
+        <div class="brand-block">
+          <div class="brand-mark"><img src="/favicon.png" alt="" /></div>
+          <div class="brand-title-row">
+            <h1 id="login-title">ElainaBot v2</h1>
+          </div>
+          <p>QQ官方机器人框架 · 安全登录</p>
         </div>
 
-        <button class="login-button" type="submit" :disabled="loading">
-          <span>{{ loading ? '正在验证...' : '进入控制台' }}</span>
-          <SvgIcon v-if="!loading" name="arrow-forward" :size="20" />
-          <span v-else class="loading-ring" aria-hidden="true" />
-        </button>
-      </form>
+        <form class="login-form" @submit.prevent="handleLogin">
+          <label class="sr-only" for="admin-password">管理员密码</label>
+          <div class="password-field">
+            <SvgIcon class="field-icon" name="key" :size="22" />
+            <input id="admin-password" v-model="form.password" :type="passwordVisible ? 'text' : 'password'" name="password" autocomplete="current-password" placeholder="输入管理员密码" autofocus />
+            <button type="button" class="visibility-button" :title="passwordVisible ? '隐藏密码' : '显示密码'" :aria-label="passwordVisible ? '隐藏密码' : '显示密码'" @click="passwordVisible = !passwordVisible">
+              <SvgIcon :name="passwordVisible ? 'eye-off' : 'eye'" :size="21" />
+            </button>
+          </div>
 
-      <p class="copyright">© {{ currentYear }} Elaina Core. All rights reserved.</p>
+          <button class="login-button" type="submit" :disabled="loading">
+            <span>{{ loading ? '正在验证...' : '进入控制台' }}</span>
+            <SvgIcon v-if="!loading" name="arrow-forward" :size="20" />
+            <span v-else class="loading-ring" aria-hidden="true" />
+          </button>
+        </form>
+
+        <p class="copyright">© {{ currentYear }} Elaina Core. All rights reserved.</p>
+      </div>
     </section>
 
     <div class="help-wrap">
@@ -232,6 +237,39 @@ async function handleLogin() {
   background: var(--login-surface);
   color: #1f2733;
   box-shadow: 0 20px 48px rgba(38, 74, 91, .1);
+  overflow: hidden;
+}
+
+/* 登录页左侧竖版插画：仅宽屏双栏布局显示 */
+.brand-art { display: none; }
+
+@media (min-width: 881px) {
+  .login-shell {
+    width: min(720px, 100%);
+    display: flex;
+    align-items: stretch;
+    padding: 0;
+  }
+  .brand-art {
+    display: block;
+    flex: 0 0 262px;
+    min-height: 480px;
+  }
+  .brand-art img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: top center;
+  }
+  .login-body {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 38px 40px;
+  }
 }
 
 .brand-block { text-align: center; }
