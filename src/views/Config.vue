@@ -433,6 +433,8 @@ onUnmounted(stopQrBindPoll)
             <div class="vis-field"><label>批量写入条数</label><input type="number" :value="settings.logging?.batch_size ?? 0" @input="updateSettingNum('logging', 'batch_size', $event)" /></div>
             <div class="vis-field"><label>保留天数</label><input type="number" :value="settings.logging?.retention_days ?? 5" @input="updateSettingNum('logging', 'retention_days', $event)" /></div>
             <div class="vis-field full"><label>WAL 模式</label><label class="vis-switch"><input type="checkbox" :checked="settings.logging?.wal_mode !== false" @change="updateSettingBool('logging', 'wal_mode', $event)" /><span /></label></div>
+            <div class="vis-field full"><label>记录消息原始响应</label><label class="vis-switch"><input type="checkbox" :checked="settings.logging?.record_raw_message !== false" @change="updateSettingBool('logging', 'record_raw_message', $event)" /><span /></label></div>
+            <div class="tpl-desc" style="grid-column: 1 / -1">关闭后不再记录 context 和 raw_message，可大幅减少日志体积；关闭后无法通过数据库读取历史报错的原始内容。</div>
           </div>
           <div class="vis-card-title" style="margin-top:14px">依赖管理</div>
           <div class="vis-grid">
