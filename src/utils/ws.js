@@ -7,6 +7,10 @@ let wsFailCount = 0
 const RECONNECT_DELAY = 3000
 const MAX_WS_FAILS = 2
 
+export function isConnected() {
+  return ws?.readyState === 1 || sse?.readyState === 1
+}
+
 export function connect() {
   wsFailCount >= MAX_WS_FAILS ? connectSSE() : connectWS()
 }

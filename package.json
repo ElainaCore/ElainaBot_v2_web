@@ -6,7 +6,12 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "playwright test",
+    "test:panel": "playwright test tests/analytics.spec.js tests/routes-smoke.spec.js",
+    "test:panel:preview": "playwright test --config playwright.panel-preview.config.js",
+    "test:messages": "playwright test",
+    "test:messages:preview": "playwright test --config playwright.preview.config.js"
   },
   "dependencies": {
     "axios": "^1.6.0",
@@ -24,6 +29,7 @@
     "vuedraggable": "^4.1.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.64.1",
     "@tailwindcss/vite": "^4.3.0",
     "@vitejs/plugin-vue": "^5.0.0",
     "tailwindcss": "^4.3.0",

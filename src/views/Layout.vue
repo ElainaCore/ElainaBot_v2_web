@@ -8,7 +8,6 @@ import { connect, disconnect, on, off } from '../utils/ws'
 import axios from '../utils/axios'
 import { responsePayload } from '../utils/api'
 import SvgIcon from '../components/SvgIcon.vue'
-import qqGroupImg from '../assets/qq-group.jpg'
 
 const router = useRouter()
 const route = useRoute()
@@ -22,7 +21,6 @@ const mobileMenuOpen = ref(false)
 const isMobile = ref(false)
 const restarting = ref(false)
 const showDefaultPwdWarning = ref(false)
-const showQQGroup = ref(false)
 
 
 const NAV_ITEMS = [
@@ -231,15 +229,12 @@ onUnmounted(() => {
         </a>
 
         <template v-if="app.webPages.length">
-          <div v-if="!app.sidebarCollapsed || isMobile" class="nav-divider">扩展页面</div>
+          <div class="nav-divider" role="separator" />
           <a v-for="page in app.webPages" :key="page.key"
             :class="['nav-item', { active: route.params.key === page.key && route.name === 'CustomPage' }]"
             @click="navigateCustom(page.key)">
-            <SvgIcon name="extension-puzzle" :size="18" />
-            <span v-if="!app.sidebarCollapsed || isMobile" class="nav-label-with-badge">
-              {{ page.label }}
-              <SvgIcon :name="page.source === 'module' ? 'cube' : 'link'" :size="12" class="nav-badge" />
-            </span>
+            <SvgIcon :name="page.source === 'module' ? 'cube' : 'link'" :size="18" />
+            <span v-if="!app.sidebarCollapsed || isMobile">{{ page.label }}</span>
           </a>
         </template>
       </nav>
@@ -336,11 +331,6 @@ onUnmounted(() => {
         </div>
 
         <div class="topbar-right">
-          <!-- QQ 交流群 -->
-          <n-button quaternary circle size="small" title="QQ 交流群" @click="showQQGroup = true">
-            <template #icon><SvgIcon name="qq" :size="18" /></template>
-          </n-button>
-
           <!-- Dark mode toggle -->
           <n-button quaternary circle size="small" :title="themeStore.darkMode ? '切换日间模式' : '切换夜间模式'"
             @click="themeStore.toggleDark($event)">
@@ -431,17 +421,6 @@ onUnmounted(() => {
             <button class="restart-btn primary" @click="handleRestart">重试</button>
           </template>
         </div>
-      </div>
-    </n-modal>
-
-    <!-- QQ 交流群 modal -->
-    <n-modal v-model:show="showQQGroup" preset="card" title="QQ 交流群"
-      :style="{ width: isMobile ? '90vw' : '360px', maxWidth: '360px', background: 'var(--bg2)' }">
-      <div class="qq-group-body">
-        <img :src="qqGroupImg" alt="QQ 群二维码" class="qq-group-qr" />
-        <a href="https://qm.qq.com/q/ugYhjupA1W" target="_blank" rel="noopener" class="qq-group-btn">
-          <SvgIcon name="qq" :size="16" />点击加入群聊
-        </a>
       </div>
     </n-modal>
 
@@ -609,21 +588,9 @@ onUnmounted(() => {
   background:var(--accent)
 }
 .nav-divider {
-  font-size:11px;
-  color:var(--text3);
-  padding:3px 16px 4px;
-  text-transform:uppercase;
-  letter-spacing:.5px;
-  font-weight:600
-}
-.nav-label-with-badge {
-  display:inline-flex;
-  align-items:center;
-  gap:4px
-}
-.nav-badge {
-  opacity:.5;
-  flex-shrink:0
+  height:1px;
+  margin:12px 16px;
+  background:var(--border)
 }
 .sidebar-toggle {
   padding:12px;
@@ -894,33 +861,6 @@ onUnmounted(() => {
   box-shadow:0 4px 12px rgba(0,0,0,.15)
 }
 .restart-btn.ghost { background:var(--bg3); color:var(--text2); border:1px solid var(--border) }
-.qq-group-body {
-  display:flex;
-  flex-direction:column;
-  align-items:center;
-  gap:14px
-}
-.qq-group-qr {
-  width:100%;
-  max-width:280px;
-  border-radius:12px;
-  border:1px solid var(--border)
-}
-.qq-group-btn {
-  display:inline-flex;
-  align-items:center;
-  gap:6px;
-  background:var(--accent);
-  color:#fff;
-  border-radius:8px;
-  padding:8px 20px;
-  font-size:13px;
-  text-decoration:none;
-  transition:opacity .15s
-}
-.qq-group-btn:hover {
-  opacity:.85
-}
 .github-link {
   display:inline-flex;
   align-items:center;

@@ -1,0 +1,218 @@
+/* Loaded by Statistics.vue as a scoped stylesheet. */
+.stats-page {
+  max-width: 1600px;
+  margin-inline: auto;
+  color: var(--text);
+  font-family:
+    Inter,
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    'PingFang SC',
+    'Microsoft YaHei',
+    sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+.stats-page,
+.stats-page :deep(*),
+.stats-page :deep(*::before),
+.stats-page :deep(*::after) {
+  box-sizing: border-box;
+}
+.stats-page :deep(button) {
+  font-family: inherit;
+  -webkit-tap-highlight-color: transparent;
+}
+.stats-page :deep(:is(button, a, input, select, textarea, [tabindex]):focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.stats-page :deep(::selection) {
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+}
+.stats-page :deep(.ui-btn) {
+  min-height: 36px;
+  padding: 9px 15px;
+  border-radius: 8px;
+  font-size: 11px;
+  line-height: 1.5;
+  font-weight: 550;
+  justify-content: center;
+}
+.stats-page :deep(.ui-btn-ghost) {
+  box-shadow: none;
+}
+.analytics-panel {
+  min-width: 0;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow-sm);
+}
+.panel-heading {
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.panel-heading > div:first-child {
+  min-width: 0;
+}
+.panel-heading h2 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.2px;
+}
+.panel-subtitle {
+  color: var(--text3);
+  font-size: 9px;
+  font-weight: 400;
+  letter-spacing: 0.2px;
+}
+.period-switch {
+  display: inline-flex;
+  padding: 3px;
+  border-radius: 7px;
+  background: var(--bg3);
+  gap: 2px;
+  flex-shrink: 0;
+}
+.period-switch button {
+  display: inline-flex;
+  justify-content: center;
+  padding: 5px 11px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--text3);
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    color 0.15s,
+    background 0.15s,
+    box-shadow 0.15s;
+}
+.period-switch button.active {
+  background: var(--bg2);
+  color: var(--text);
+  box-shadow: 0 1px 4px #00000009;
+}
+.period-switch button:hover {
+  color: var(--text);
+}
+.analysis-tabs {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+.analysis-tabs button {
+  background: transparent;
+  padding: 12px 0;
+  color: var(--text3);
+  border: 0;
+  border-bottom: 2px solid transparent;
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    color 0.15s,
+    border-color 0.15s;
+}
+.analysis-tabs button.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+.analysis-tabs button:hover {
+  color: var(--accent);
+}
+.text-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: 0;
+  padding: 3px 0;
+  font-size: 10px;
+  color: var(--accent);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.text-action:hover {
+  color: var(--accent-hover);
+}
+.analytics-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 1px 3px;
+  color: var(--text3);
+  font-size: 9px;
+}
+.analytics-footer > span:first-child {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.footer-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  display: inline-block;
+}
+@media (max-width: 767px) {
+  .panel-heading {
+    padding: 14px 16px;
+    gap: 10px;
+  }
+  .panel-heading h2 {
+    font-size: 13px;
+    gap: 7px;
+  }
+  .panel-subtitle {
+    font-size: 8px;
+  }
+  .period-switch button {
+    padding: 5px 9px;
+    font-size: 9px;
+  }
+  .analysis-tabs {
+    gap: 22px;
+  }
+  .analysis-tabs button {
+    font-size: 10px;
+  }
+  .analytics-footer {
+    font-size: 8px;
+  }
+}
+@media (max-width: 400px) {
+  .panel-heading {
+    flex-wrap: wrap;
+  }
+  .analytics-footer {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 6px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .stats-page :deep(*),
+  .stats-page :deep(*::before),
+  .stats-page :deep(*::after) {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

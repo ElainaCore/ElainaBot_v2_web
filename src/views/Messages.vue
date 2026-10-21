@@ -1,14 +1,21 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useAppStore } from '../stores/app'
-import { on, off } from '../utils/ws'
+import { on, off, isConnected } from '../utils/ws'
 import axios from '../utils/axios'
 import { parseMessageReference } from '../utils/messageReference'
+import { safeResourceUrl, parseMessageMedia } from '../utils/messageMarkdown'
+import { copyText } from '../utils/clipboard'
+import SvgIcon from '../components/SvgIcon.vue'
+import MessageAvatar from '../components/messages/MessageAvatar.vue'
+import MessageContent from '../components/messages/MessageContent.vue'
+import GroupStatus from '../components/messages/GroupStatus.vue'
 
 const app = useAppStore()
 let _unmounted = false
-const nickCache = {}
+const nickCache = Object.create(null)
 const PAGE = 50
+const HISTORY_PAGE = 60
 const isMobile = ref(window.innerWidth < 768)
 const mobileView = ref('list')
 const chatType = ref('full_access')
@@ -18,6 +25,7 @@ const page = ref(1)
 const total = ref(0)
 const chatsLoading = ref(false)
 const chatsError = ref('')
+const chatsIndexing = ref(false)
 const current = ref(null)
 const history = ref([])
 const historyRef = ref(null)
@@ -32,10 +40,13 @@ const rawDataMsg = ref(null)
 const quotedMsg = ref(null)
 const lastMsgId = ref('')
 const oldestDate = ref('')
+const historyCursor = ref('')
 const hasMore = ref(true)
 const loadingOlder = ref(false)
 const mediaFileType = ref('1')
-const mediaAccept = computed(() => ({ '1': 'image/*', '2': 'video/*', '3': 'audio/*', '4': '*/*' }[mediaFileType.value] || '*/*'))
+const mediaAccept = computed(
+  () => ({ 1: 'image/*', 2: 'video/*', 3: 'audio/*', 4: '*/*' })[mediaFileType.value] || '*/*'
+)
 const sendMode = ref('default')
 const customSendId = ref('')
 const arkTpl = ref('23')
@@ -44,31 +55,38 @@ const arkList = ref('')
 const cardFields = ref({})
 const imgPreview = ref('')
 const msgTypeOptions = [
-  { value: 'markdown', label: 'MD' },
+  { value: 'markdown', label: 'Markdown' },
   { value: 'text', label: '文本' },
   { value: 'media', label: '媒体' },
   { value: 'ark', label: 'ARK' },
-  { value: 'card', label: '卡片' },
+  { value: 'card', label: '卡片' }
 ]
 const mediaTypeOptions = [
   { value: '1', label: '图片' },
   { value: '2', label: '视频' },
   { value: '3', label: '语音' },
-  { value: '4', label: '文件' },
+  { value: '4', label: '文件' }
 ]
 const sendModeOptions = [
   { value: 'default', label: '默认 (全量群主动/其他被动)' },
   { value: 'passive', label: '被动 (msg_id)' },
   { value: 'active', label: '主动' },
   { value: 'custom_msg_id', label: '自定义 msg_id' },
-  { value: 'custom_event_id', label: '自定义事件 ID' },
+  { value: 'custom_event_id', label: '自定义事件 ID' }
 ]
-const sendModeShortLabels = { default: '默认', passive: '被动', active: '主动', custom_msg_id: 'msg_id', custom_event_id: '事件ID' }
-const isCustomSendMode = computed(() => sendMode.value === 'custom_msg_id' || sendMode.value === 'custom_event_id')
+const isCustomSendMode = computed(
+  () => sendMode.value === 'custom_msg_id' || sendMode.value === 'custom_event_id'
+)
 
-const apiChatType = computed(() => (chatType.value === 'full_access' || chatType.value === 'remark') ? 'group' : chatType.value)
+const apiChatType = computed(() =>
+  chatType.value === 'full_access' || chatType.value === 'remark' ? 'group' : chatType.value
+)
 const groupRoles = ref({})
 const botIsGroupAdmin = ref(false)
+const currentGroupMembers = computed(() => {
+  const count = Number(current.value?.group_member_num)
+  return Number.isFinite(count) && count > 0 ? `${count.toLocaleString()} 人` : '人数未知'
+})
 const muteModalVisible = ref(false)
 const muteTarget = ref(null)
 const muteMinutes = ref(30)
@@ -79,6 +97,8 @@ const remarkInput = ref('')
 const remarkQqInput = ref('')
 const remarkEditing = ref(null)
 const remarkModalVisible = ref(false)
+const remarkError = ref('')
+const remarkSaving = ref(false)
 const addRemarkModalVisible = ref(false)
 const addRemarkOpenid = ref('')
 const addRemarkName = ref('')
@@ -86,80 +106,329 @@ const addRemarkQq = ref('')
 const refreshingGroup = ref('')
 const refreshingPage = ref(false)
 const groupRefreshError = ref('')
-const placeholder = computed(() => msgType.value === 'markdown' ? '输入 Markdown 内容...' : msgType.value === 'media' ? '输入资源 URL 或上传文件...' : '输入消息内容...')
-const quotedPreview = computed(() => quotedMsg.value ? buildQuotePreview(quotedMsg.value) : '')
-const olderBtnLabel = computed(() => {
-  const today = new Date(); const pad = n => String(n).padStart(2, '0')
-  const t = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`
-  return (!oldestDate.value || oldestDate.value >= t) ? '查询昨日消息' : '查询更早消息'
-})
-const MEDIA_RE = /\[(图片|语音|视频|文件|媒体|media)](\S+)/
-
-function handleResize() { isMobile.value = window.innerWidth < 768 }
-function goBackToList() { mobileView.value = 'list'; current.value = null }
-function selectMsgType(value) { msgType.value = value }
-function avatarUrl(appid, uid) { return `https://q.qlogo.cn/qqapp/${appid}/${uid}/0` }
-function getBotAvatar(appid) { const bot = app.bots.find(b => b.appid === appid); return bot?.avatar || '' }
-function qqAvatar(qq) { return `http://q1.qlogo.cn/g?b=qq&nk=${qq}&s=100` }
-function groupQqAvatar(qq) { return `https://p.qlogo.cn/gh/${qq}/${qq}/100/` }
-function openUrl(u) { const a = document.createElement('a'); a.href = u; a.target = '_blank'; a.rel = 'noreferrer noopener'; a.click() }
+const historyLoading = ref(false)
+const historyError = ref('')
+const olderError = ref('')
+const wsConnected = ref(isConnected())
+const searchVisible = ref(false)
+const searchRef = ref(null)
+const messageSearch = ref('')
+const messageDirection = ref('all')
+const detailsVisible = ref(false)
+const sendOptionsOpen = ref(false)
+const showPreview = ref(false)
+const editorRef = ref(null)
+watch([msgText, editorRef], resizeEditor, { flush: 'post' })
+const stickToBottom = ref(true)
+const newMessageCount = ref(0)
+const copiedMessage = ref('')
 const lightboxSrc = ref('')
-function previewImg(src) { lightboxSrc.value = src }
-function closeLightbox() { lightboxSrc.value = '' }
-const COSTLY_DOMAINS = ['myqcloud.com', 'aliyuncs.com', 'cos.ap-']
-function isCostlyUrl(url) { return COSTLY_DOMAINS.some(d => url.includes(d)) }
-function revealImg(e) { const el = e.currentTarget; const src = el.dataset.src; if (src) { const img = document.createElement('img'); img.src = src; img.className = 'bubble-media-img'; img.style.cssText = 'max-width:160px;max-height:120px;width:auto;height:auto;border-radius:6px;display:block;cursor:pointer'; img.referrerPolicy = 'no-referrer'; img.loading = 'lazy'; img.onclick = () => previewImg(src); el.replaceWith(img) } }
-function onBubbleClick(e) {
-  const t = e.target
-  if (!t) return
-  if (t.tagName === 'IMG' && t.classList.contains('md-img') && t.src) { previewImg(t.src); return }
-  if (t.classList.contains('md-img-ph') && t.dataset.src) {
-    const src = t.dataset.src
-    const img = document.createElement('img')
-    img.src = src
-    img.className = 'md-img-loaded'
-    img.style.cssText = 'display:block;max-width:200px;max-height:160px;width:auto;height:auto;border-radius:6px;margin:4px 0;cursor:pointer;object-fit:contain'
-    img.referrerPolicy = 'no-referrer'
-    img.loading = 'lazy'
-    img.onclick = () => previewImg(src)
-    t.replaceWith(img)
+const lightboxCloseRef = ref(null)
+let lightboxPreviousFocus = null
+let _copyTimer = null
+let historyResizeObserver = null
+
+const arkFieldOptions = computed(() => {
+  const labels = {
+    '#DESC#': '描述',
+    '#PROMPT#': '提示',
+    '#TITLE#': '标题',
+    '#METADESC#': '详情',
+    '#IMG#': '图片 URL',
+    '#LINK#': '跳转 URL',
+    '#SUBTITLE#': '副标题',
+    '#METATITLE#': '标题',
+    '#METASUBTITLE#': '副标题',
+    '#METACOVER#': '封面 URL',
+    '#METAURL#': '跳转 URL'
   }
+  const keys =
+    arkTpl.value === '24'
+      ? ['#DESC#', '#PROMPT#', '#TITLE#', '#METADESC#', '#IMG#', '#LINK#', '#SUBTITLE#']
+      : arkTpl.value === '37'
+        ? ['#PROMPT#', '#METATITLE#', '#METASUBTITLE#', '#METACOVER#', '#METAURL#']
+        : ['#DESC#', '#PROMPT#']
+  return keys.map((key) => ({ key, label: labels[key] }))
+})
+const chatTypeOptions = [
+  { value: 'full_access', label: '全量群' },
+  { value: 'remark', label: '备注' },
+  { value: 'group', label: '群聊' },
+  { value: 'user', label: '私聊' }
+]
+const directionOptions = [
+  { value: 'all', label: '全部消息' },
+  { value: 'received', label: '收到' },
+  { value: 'sent', label: '发出' }
+]
+const markdownTools = [
+  { label: '加粗', symbol: 'B', prefix: '**', suffix: '**', sample: '加粗文字', class: 'tool-bold' },
+  { label: '斜体', symbol: 'I', prefix: '*', suffix: '*', sample: '斜体文字', class: 'tool-italic' },
+  { label: '插入链接', icon: 'link', prefix: '[', suffix: '](https://example.com)', sample: '链接文字' },
+  { label: '行内代码', icon: 'code', prefix: '`', suffix: '`', sample: 'code' },
+  { label: '代码块', symbol: '{ }', prefix: '```text\n', suffix: '\n```', sample: '代码内容', block: true },
+  { label: '引用', symbol: '❞', prefix: '> ', sample: '引用内容', block: true },
+  { label: '列表', icon: 'list', prefix: '- ', sample: '列表内容', block: true },
+  {
+    label: '插入图片',
+    icon: 'image',
+    prefix: '![',
+    suffix: '](https://example.com/image.png)',
+    sample: '图片描述'
+  }
+]
+const visibleMessages = computed(() => {
+  const query = messageSearch.value.trim().toLocaleLowerCase()
+  return history.value.filter((message) => {
+    if (messageDirection.value === 'sent' && (!message.is_self || message.event_type)) return false
+    if (messageDirection.value === 'received' && (message.is_self || message.event_type)) return false
+    return (
+      !query ||
+      [message.content, message.nickname, message.user_id, message.message_id].some((value) =>
+        String(value || '')
+          .toLocaleLowerCase()
+          .includes(query)
+      )
+    )
+  })
+})
+const isFiltering = computed(() => !!messageSearch.value.trim() || messageDirection.value !== 'all')
+const canSend = computed(() => {
+  if (!current.value || sending.value) return false
+  if (msgType.value === 'ark') return buildArkKv().length > 0
+  if (msgType.value === 'card') return Object.keys(buildCardContent()).length > 0
+  return (
+    !!msgText.value.trim() ||
+    (msgType.value === 'text' && !!imgFile.value) ||
+    (msgType.value === 'media' && !!mediaFile.value)
+  )
+})
+const placeholder = computed(() =>
+  msgType.value === 'markdown'
+    ? '写下消息，支持 Markdown 格式…'
+    : msgType.value === 'media'
+      ? '粘贴资源 URL，或在下方上传文件…'
+      : '写下你想发送的消息…'
+)
+const quotedPreview = computed(() => (quotedMsg.value ? buildQuotePreview(quotedMsg.value) : ''))
+const olderBtnLabel = computed(() =>
+  historyCursor.value ? '加载更早消息' : !oldestDate.value || oldestDate.value >= localDate() ? '加载昨日消息' : '加载更早消息'
+)
+
+function localDate() {
+  const date = new Date()
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 }
-function shortTime(t) { return t ? (t.length > 10 ? t.slice(11, 16) : t) : '' }
-function stripYear(t) { if (!t) return ''; const m = t.match(/^\d{4}-(\d{2}-\d{2}\s+\d{2}:\d{2}(:\d{2})?)$/); return m ? m[1] : t }
+function dateLabel(timestamp) {
+  const date = String(timestamp || '').slice(0, 10)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return '消息记录'
+  if (date === localDate()) return '今天'
+  return `${date.slice(0, 4)} 年 ${Number(date.slice(5, 7))} 月 ${Number(date.slice(8, 10))} 日`
+}
+function messageKey(message) {
+  return `${message.appid || ''}:${message.message_id || `${message.id}:${message.timestamp}`}`
+}
+function handleResize() {
+  isMobile.value = window.innerWidth < 768
+  if (stickToBottom.value) nextTick(scrollBottom)
+}
+function changePage(delta) {
+  page.value += delta
+  fetchChats()
+}
+function dismissConversationNotice() {
+  groupRefreshError.value = ''
+  groupActionMessage.value = ''
+}
+function resetMessageFilters() {
+  messageSearch.value = ''
+  messageDirection.value = 'all'
+}
+function goBackToList() {
+  resetConversation()
+  mobileView.value = 'list'
+}
+function selectMsgType(value) {
+  msgType.value = value
+  showPreview.value = false
+  sendErr.value = ''
+}
+function avatarUrl(appid, uid) {
+  return `https://q.qlogo.cn/qqapp/${encodeURIComponent(appid)}/${encodeURIComponent(uid)}/0`
+}
+function getBotAvatar(appid) {
+  return app.bots.find((bot) => bot.appid === appid)?.avatar || ''
+}
+function qqAvatar(qq) {
+  return `https://q1.qlogo.cn/g?b=qq&nk=${encodeURIComponent(qq)}&s=100`
+}
+function groupQqAvatar(qq) {
+  return `https://p.qlogo.cn/gh/${encodeURIComponent(qq)}/${encodeURIComponent(qq)}/100/`
+}
+function chatAvatar(chat) {
+  return chatType.value === 'user' && chat.appid
+    ? avatarUrl(chat.appid, chat.chat_id)
+    : chat.group_qq
+      ? groupQqAvatar(chat.group_qq)
+      : ''
+}
+function messageAvatar(message) {
+  if (message.is_self) return message.bot_qq ? qqAvatar(message.bot_qq) : getBotAvatar(message.appid)
+  return message.appid && message.user_id ? avatarUrl(message.appid, message.user_id) : ''
+}
+function chatPreview(chat) {
+  return (
+    String(chat.last_content || '')
+      .replace(/\n\[keyboard\][\s\S]*$/, '')
+      .replace(/\s+/g, ' ')
+      .trim() || '暂无消息，点击查看会话'
+  )
+}
+async function previewImg(src) {
+  const url = safeResourceUrl(src)
+  if (!url) return
+  lightboxPreviousFocus = document.activeElement
+  lightboxSrc.value = url
+  await nextTick()
+  lightboxCloseRef.value?.focus()
+}
+function closeLightbox() {
+  lightboxSrc.value = ''
+  lightboxPreviousFocus?.focus?.({ preventScroll: true })
+}
+function onEscape(event) {
+  if (event.key === 'Escape' && lightboxSrc.value) closeLightbox()
+}
+function onConnectionClose() {
+  wsConnected.value = false
+}
+async function toggleSearch() {
+  searchVisible.value = !searchVisible.value
+  if (searchVisible.value) {
+    await nextTick()
+    searchRef.value?.focus()
+  } else messageSearch.value = ''
+}
+async function insertMarkdown(tool) {
+  showPreview.value = false
+  await nextTick()
+  const editor = editorRef.value
+  if (!editor) return
+  const start = editor.selectionStart,
+    end = editor.selectionEnd
+  const selection = msgText.value.slice(start, end) || tool.sample
+  const prefix = (tool.block && start > 0 && msgText.value[start - 1] !== '\n' ? '\n' : '') + tool.prefix
+  msgText.value =
+    msgText.value.slice(0, start) + prefix + selection + (tool.suffix || '') + msgText.value.slice(end)
+  await nextTick()
+  editor.focus()
+  editor.setSelectionRange(start + prefix.length, start + prefix.length + selection.length)
+}
+async function copyMessage(message) {
+  const ok = await copyText(message.content)
+  if (!ok) {
+    window.$message?.error('复制失败，请手动选择内容')
+    return
+  }
+  copiedMessage.value = messageKey(message)
+  clearTimeout(_copyTimer)
+  _copyTimer = setTimeout(() => {
+    copiedMessage.value = ''
+  }, 1800)
+}
+async function copyValue(value) {
+  if (await copyText(value)) window.$message?.success('已复制')
+}
+
+function shortTime(t) {
+  return t ? (t.length > 10 ? t.slice(11, 16) : t) : ''
+}
 function chatDisplayName(chat) {
   if (!chat) return ''
   if (chatType.value === 'user') return chat.nickname || chat.chat_id
   return chat.remark || chat.group_name || chat.chat_id
 }
 
-function isAuditId(id) { return id && id.startsWith('msg_auditid_') }
-function canRecall(m) { return !!m.message_id && !isAuditId(m.message_id) }
-function canQuote(m) { return !!m.message_id && !isAuditId(m.message_id) && !m._recalled && !m._audit_rejected }
-function showRaw(m) { rawDataMsg.value = rawDataMsg.value === m ? null : m }
+function isAuditId(id) {
+  return id && id.startsWith('msg_auditid_')
+}
+function canRecall(m) {
+  if (!m.message_id || isAuditId(m.message_id)) return false
+  return !!m.is_self || (apiChatType.value === 'group' && botIsGroupAdmin.value)
+}
+function canQuote(m) {
+  return !!m.message_id && !isAuditId(m.message_id) && !m._recalled && !m._audit_rejected
+}
+async function showRaw(m) {
+  rawDataMsg.value = rawDataMsg.value === m ? null : m
+  if (rawDataMsg.value !== m || !m.raw_available || m.raw_message || m._rawLoaded || m._rawLoading) return
+  m._rawLoading = true
+  m._rawError = ''
+  const selection = _selectId
+  try {
+    const res = await axios.post('/api/message/history', {
+      chat_type: apiChatType.value, chat_id: current.value.chat_id, appid: m.appid || currentAppid(),
+      raw_id: m.id, date: m.date || String(m.timestamp).slice(0, 10)
+    })
+    if (_unmounted || selection !== _selectId) return
+    m.raw_message = res.data?.data?.raw_message || ''
+    m._rawLoaded = true
+  } catch {
+    m._rawError = '原始数据加载失败，请重新打开重试'
+  } finally {
+    m._rawLoading = false
+  }
+}
 function formatRaw(m) {
   if (m.raw_message) {
-    try { return JSON.stringify(JSON.parse(m.raw_message), null, 2) } catch {}
+    try {
+      return JSON.stringify(JSON.parse(m.raw_message), null, 2)
+    } catch {}
     return m.raw_message
   }
-  return JSON.stringify({ message_id: m.message_id, user_id: m.user_id, content: m.content, timestamp: m.timestamp, source: m.source, is_self: m.is_self, appid: m.appid }, null, 2)
+  return JSON.stringify(
+    {
+      message_id: m.message_id,
+      user_id: m.user_id,
+      content: m.content,
+      timestamp: m.timestamp,
+      source: m.source,
+      is_self: m.is_self,
+      appid: m.appid
+    },
+    null,
+    2
+  )
 }
 
-function quoteAuthor(m) { return m.is_self ? '我' : (m.nickname || m.user_id || '未知用户') }
-function buildQuotePreview(m) {
-  if (m._media) return [m._media.type ? `[${m._media.type}]` : '[媒体]', m._media.text, m._media.src].filter(Boolean).join(' ')
-  return String(m.content || '').replace(/\n\[keyboard\] [\s\S]*$/, '').replace(/\s+/g, ' ').trim() || '空消息'
+function quoteAuthor(m) {
+  return m.is_self ? '我' : m.nickname || m.user_id || '未知用户'
 }
-function quoteTargetText(q) { return q?.text || (q?.id ? `ID: ${q.id}` : '引用消息') }
+function buildQuotePreview(m) {
+  if (m._media)
+    return [m._media.type ? `[${m._media.type}]` : '[媒体]', m._media.text, m._media.src]
+      .filter(Boolean)
+      .join(' ')
+  return (
+    String(m.content || '')
+      .replace(/\n\[keyboard\] [\s\S]*$/, '')
+      .replace(/\s+/g, ' ')
+      .trim() || '空消息'
+  )
+}
+function quoteTargetText(q) {
+  return q?.text || (q?.id ? `ID: ${q.id}` : '引用消息')
+}
 function prepareMessage(m) {
-  m._media = parseMedia(m.content)
+  m._media = parseMessageMedia(m.content)
   m._recalled = !!m.recalled
-  m._quote = parseMessageReference(m)
-  if (!m._media) m._html = renderContent(m.content)
+  m._quote = m.reference || parseMessageReference(m)
+  if (!m.is_self && m.user_id && m.nickname && !/^(?:rt_|lc_rt_)/.test(String(m.id))) nickCache[m.user_id] = m.nickname
   return m
 }
 function resolveMessageReferences(messages) {
-  const byReferenceId = {}, byMessageId = {}
+  const byReferenceId = Object.create(null),
+    byMessageId = Object.create(null)
   for (const m of messages) {
     if (m.reference_id) byReferenceId[m.reference_id] = m
     if (m.message_id) byMessageId[m.message_id] = m
@@ -177,244 +446,66 @@ function resolveMessageReferences(messages) {
 function quoteMsg(m) {
   if (!canQuote(m)) return
   quotedMsg.value = m
+  showPreview.value = false
+  nextTick(() => editorRef.value?.focus())
 }
-function clearQuote() { quotedMsg.value = null }
+function clearQuote() {
+  quotedMsg.value = null
+}
 
 async function recallMsg(m) {
   if (recalling.value || !m.message_id) return
+  const selection = _selectId
   recalling.value = m.message_id
   try {
     const res = await axios.post('/api/message/recall', {
       chat_type: apiChatType.value,
       chat_id: current.value?.chat_id || '',
       appid: m.appid || app.currentBotId || '',
-      message_id: m.message_id,
+      message_id: m.message_id
     })
     if (res.data?.success) {
       m._recalled = true
-    } else {
+    } else if (selection === _selectId) {
       sendErr.value = res.data?.message || '撤回失败'
     }
   } catch (e) {
-    sendErr.value = e.response?.data?.message || e.message || '撤回失败'
+    if (selection === _selectId) sendErr.value = e.response?.data?.message || e.message || '撤回失败'
   } finally {
     recalling.value = ''
   }
 }
-function escapeHtml(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;') }
-
-const IMG_URL_RE = /(?:<[^>]*>)*<(https?:\/\/[^>]*(?:multimedia\.nt\.qq\.com\.cn|qqbot\.ugcimg\.cn|gchat\.qpic\.cn)[^>]*)>/
-
-function parseMedia(content) {
-  if (!content) return null
-  const m = content.match(MEDIA_RE)
-  if (m) { const text = content.replace(m[0], '').replace(/^\n+|\n+$/g, '').trim(); return { type: m[1], src: m[2], text } }
-  const im = content.match(IMG_URL_RE)
-  if (im) { const text = content.replace(im[0], '').replace(/^\n+|\n+$/g, '').trim(); return { type: '图片', src: im[1], text } }
-  return null
-}
-
-function renderContent(content) {
-  if (!content) return ''
-  let text = content, kbHtml = ''
-  const km = content.match(/(^|\n)\[keyboard\] ?/)
-  if (km) {
-    const ki = km.index
-    const rest = content.slice(ki + km[0].length)
-    text = content.slice(0, ki)
-    try {
-      const kb = JSON.parse(rest)
-      const rows = kb?.content?.rows || []
-      const _svg = 'width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"'
-      const _icons = {
-        0: `<svg ${_svg}><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>`,
-        1: `<svg ${_svg}><polyline points="9 10 4 15 9 20"/><path d="M20 4v7a4 4 0 0 1-4 4H4"/></svg>`,
-        2: `<svg ${_svg}><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>`,
-      }
-      const rowsHtml = rows.map(row => {
-        const btns = (row.buttons || []).map(b => {
-          const rd = b.render_data || {}, ac = b.action || {}
-          const cls = ['kb-btn', `kb-t${ac.type ?? 2}`]; if (rd.style === 1) cls.push('kb-primary')
-          const tips = []; if (ac.data) tips.push(ac.data); if (ac.enter) tips.push('回车发送')
-          const icon = _icons[ac.type] || _icons[2]
-          return `<span class="${cls.join(' ')}"${tips.length ? ` title="${tips.join(' · ')}"` : ''}>${icon}${escapeHtml(rd.label || '?')}</span>`
-        })
-        return `<div class="kb-row">${btns.join('')}</div>`
-      })
-      if (rowsHtml.length) kbHtml = `<div class="kb-wrap">${rowsHtml.join('')}</div>`
-    } catch {
-      const nl = rest.indexOf('\n')
-      const line = nl === -1 ? rest : rest.slice(0, nl)
-      if (nl !== -1) text += rest.slice(nl)
-      const labels = line.split('|').map(s => s.trim()).filter(Boolean)
-      if (labels.length) kbHtml = `<div class="kb-wrap"><div class="kb-row">${labels.map(l => `<span class="kb-btn">${escapeHtml(l)}</span>`).join('')}</div></div>`
-    }
-  }
-  const _esc = []
-  text = text.replace(/\\([\\`*_~\[\](){}#+\-.!|<>@&])/g, (_, c) => { _esc.push(escapeHtml(c)); return `\uE000${_esc.length - 1}\uE000` })
-  let h = escapeHtml(text)
-  h = h.replace(/&lt;@!?([^&<>\s]+)&gt;/g, (_, id) => {
-    const nick = mentionNicks.value[id] || nickCache[id]
-    return `<span class="mention" title="${id}">@${nick ? escapeHtml(nick) : id}</span>`
-  })
-  h = h.replace(/&lt;qqbot-cmd-input\s+(.+?)\s*\/?&gt;/g, (full, attrs) => {
-    let text = '', show = ''
-    for (const am of attrs.matchAll(/(text|show)=(?:&quot;(.*?)&quot;|'(.*?)')/g)) {
-      const val = am[2] !== undefined ? am[2] : am[3]
-      if (am[1] === 'text') text = val; else show = val
-    }
-    const label = show || text
-    if (!label) return full
-    return `<span class="cmd-input"${text ? ` title="${text}"` : ''}>${label}</span>`
-  })
-  h = h.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, lang, code) => `<pre class="md-code-block"${lang ? ` data-lang="${lang}"` : ''}>${code.replace(/\n+$/, '')}</pre>`)
-  h = h.replace(/`([^`]+)`/g, '<code class="md-code">$1</code>')
-  h = h.replace(/\*\*([^*\n](?:[^\n]*?[^*\n])?)\*\*/g, '<b>$1</b>')
-  h = h.replace(/\*([^*\n]+)\*/g, '<i>$1</i>')
-  h = h.replace(/~~(.+?)~~/g, '<s>$1</s>')
-  h = h.replace(/==([^=\n]+)==/g, '<mark class="md-mark">$1</mark>')
-  h = h.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_, alt, src) => {
-    if (isCostlyUrl(src)) return `<span class="bubble-media-placeholder md-img-ph" data-src="${src}">🖼 点击加载图片 (外部存储)</span>`
-    const sm = alt.match(/#(\d+)px\s+#(\d+)px/)
-    const style = sm ? ` style="width:${sm[1]}px;height:${sm[2]}px"` : ''
-    return `<img src="${src}" class="md-img"${style} referrerpolicy="no-referrer" loading="lazy" onerror="this.style.display='none'" />`
-  })
-  h = h.replace(/\[\]\(([^)]*)\)/g, '')
-  h = h.replace(/\[([^\]]+)]\(([^)]+)\)/g, '<a href="$2" target="_blank" class="md-link">$1</a>')
-  h = h.replace(/\[\^([^\]\s]+)\]/g, '<sup class="md-sup">[$1]</sup>')
-  h = renderBlocks(h)
-  h = h.replace(/\uE000(\d+)\uE000/g, (_, i) => _esc[+i])
-  return h + kbHtml
-}
-
-function isTableSep(line) { return /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|?\s*$/.test(line) }
-function splitTableRow(line) {
-  let s = line.trim()
-  if (s.startsWith('|')) s = s.slice(1)
-  if (s.endsWith('|')) s = s.slice(0, -1)
-  return s.split('|').map(c => c.trim())
-}
-
-function renderBlocks(h) {
-  const rawLines = h.split('\n')
-  const hasImg = l => l.includes('md-img-ph') || l.includes('class="md-img"')
-  const lines = rawLines.filter((l, i) => !(l.trim() === '' && (hasImg(rawLines[i - 1] || '') || hasImg(rawLines[i + 1] || ''))))
-  const out = []
-  let inPre = false
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]
-    if (inPre) {
-      out.push(line + '<br>')
-      if (line.includes('</pre>')) inPre = false
-      continue
-    }
-    if (line.includes('<pre class="md-code-block"') && !line.includes('</pre>')) {
-      inPre = true
-      out.push(line + '<br>')
-      continue
-    }
-    if (/^\s*&gt;/.test(line)) {
-      const items = []
-      while (i < lines.length && /^\s*&gt;/.test(lines[i])) {
-        const m = lines[i].match(/^\s*((?:&gt;\s*)+)(.*)$/)
-        items.push({ depth: (m[1].match(/&gt;/g) || []).length, text: m[2] })
-        i++
-      }
-      i--
-      let qh = '', cur = 0
-      for (const it of items) {
-        while (cur < it.depth) { qh += '<blockquote class="md-quote">'; cur++ }
-        while (cur > it.depth) { qh += '</blockquote>'; cur-- }
-        qh += it.text + '<br>'
-      }
-      while (cur > 0) { qh = qh.replace(/<br>$/, '') + '</blockquote>'; cur-- }
-      out.push(qh.replace(/<br>(<blockquote)/g, '$1'))
-      continue
-    }
-    if (line.includes('|') && i + 1 < lines.length && isTableSep(lines[i + 1])) {
-      const header = splitTableRow(line)
-      const rows = []
-      i += 2
-      while (i < lines.length && lines[i].includes('|') && !isTableSep(lines[i])) {
-        rows.push(splitTableRow(lines[i]))
-        i++
-      }
-      i--
-      const thead = `<tr>${header.map(c => `<th>${c}</th>`).join('')}</tr>`
-      const tbody = rows.map(r => `<tr>${header.map((_, ci) => `<td>${r[ci] ?? ''}</td>`).join('')}</tr>`).join('')
-      out.push(`<table class="md-table"><thead>${thead}</thead><tbody>${tbody}</tbody></table>`)
-      continue
-    }
-    if (/^\s*([*_-])\s*(?:\1\s*){2,}$/.test(line)) {
-      out.push('<hr class="md-hr">')
-      continue
-    }
-    const hm = line.match(/^(#{1,6})\s+(.*)$/)
-    if (hm) {
-      const lv = hm[1].length
-      out.push(`<h${lv} class="md-h md-h${lv}">${hm[2]}</h${lv}>`)
-      continue
-    }
-    if (parseListItem(line)) {
-      const items = []
-      while (i < lines.length) {
-        const it = parseListItem(lines[i])
-        if (!it) break
-        items.push(it)
-        i++
-      }
-      i--
-      out.push(buildList(items))
-      continue
-    }
-    out.push(line + '<br>')
-  }
-  return out.join('').replace(/<br>$/, '')
-}
-
-function parseListItem(line) {
-  const m = line.match(/^(\s*)(?:([-+*])|(\d+)\.)\s+(.*)$/)
-  if (!m) return null
-  return { indent: m[1].length, ordered: m[3] !== undefined, text: m[4] }
-}
-
-function buildList(items) {
-  let html = ''
-  const stack = []
-  for (const it of items) {
-    const tag = it.ordered ? 'ol' : 'ul'
-    if (!stack.length || it.indent > stack[stack.length - 1].indent) {
-      html += `<${tag} class="md-list">`
-      stack.push({ indent: it.indent, tag })
-    } else {
-      while (stack.length > 1 && it.indent < stack[stack.length - 1].indent) html += `</${stack.pop().tag}>`
-      if (stack[stack.length - 1].tag !== tag) {
-        html += `</${stack.pop().tag}><${tag} class="md-list">`
-        stack.push({ indent: it.indent, tag })
-      }
-    }
-    html += `<li>${it.text}</li>`
-  }
-  while (stack.length) html += `</${stack.pop().tag}>`
-  return html
-}
-
 function buildCardContent() {
-  const f = cardFields.value, obj = {}
+  const f = cardFields.value,
+    obj = {}
   for (const k of ['title', 'description', 'pic_url', 'url']) if (f[k]?.trim()) obj[k] = f[k].trim()
   return obj
 }
 
 function buildArkKv() {
-  const tpl = arkTpl.value, f = arkFields.value, kv = []
-  if (tpl === '24') { for (const k of ['#DESC#','#PROMPT#','#TITLE#','#METADESC#','#IMG#','#LINK#','#SUBTITLE#']) if (f[k]) kv.push({ key: k, value: f[k] }) }
-  else if (tpl === '37') { for (const k of ['#PROMPT#','#METATITLE#','#METASUBTITLE#','#METACOVER#','#METAURL#']) if (f[k]) kv.push({ key: k, value: f[k] }) }
-  else {
+  const tpl = arkTpl.value,
+    f = arkFields.value,
+    kv = []
+  if (tpl === '24') {
+    for (const k of ['#DESC#', '#PROMPT#', '#TITLE#', '#METADESC#', '#IMG#', '#LINK#', '#SUBTITLE#'])
+      if (f[k]) kv.push({ key: k, value: f[k] })
+  } else if (tpl === '37') {
+    for (const k of ['#PROMPT#', '#METATITLE#', '#METASUBTITLE#', '#METACOVER#', '#METAURL#'])
+      if (f[k]) kv.push({ key: k, value: f[k] })
+  } else {
     if (f['#DESC#']) kv.push({ key: '#DESC#', value: f['#DESC#'] })
     if (f['#PROMPT#']) kv.push({ key: '#PROMPT#', value: f['#PROMPT#'] })
     const lines = arkList.value.trim().split('\n').filter(Boolean)
     if (lines.length) {
-      const objs = lines.map(l => { const [desc, link] = l.split('|', 2); const arr = []; if (desc?.trim()) arr.push({ key: 'desc', value: desc.trim() }); if (link?.trim()) arr.push({ key: 'link', value: link.trim() }); return arr.length ? { obj_kv: arr } : null }).filter(Boolean)
+      const objs = lines
+        .map((l) => {
+          const [desc, link] = l.split('|', 2)
+          const arr = []
+          if (desc?.trim()) arr.push({ key: 'desc', value: desc.trim() })
+          if (link?.trim()) arr.push({ key: 'link', value: link.trim() })
+          return arr.length ? { obj_kv: arr } : null
+        })
+        .filter(Boolean)
       if (objs.length) kv.push({ key: '#LIST#', obj: objs })
     }
   }
@@ -422,18 +513,32 @@ function buildArkKv() {
 }
 
 let _fetchTimer = null
+let _indexPollTimer = null
+let _chatController = null
 let _chatRequestId = 0
 async function fetchChats() {
   if (_unmounted) return
   const requestId = ++_chatRequestId
+  clearTimeout(_indexPollTimer)
+  _chatController?.abort()
+  _chatController = new AbortController()
   chatsLoading.value = true
   chatsError.value = ''
   try {
-    const res = await axios.post('/api/message/chats', { type: chatType.value, search: chatSearch.value, appid: app.currentBotId || '', page: page.value, page_size: PAGE })
+    const res = await axios.post('/api/message/chats', {
+      type: chatType.value,
+      search: chatSearch.value,
+      appid: app.currentBotId || '',
+      page: page.value,
+      page_size: PAGE
+    }, { signal: _chatController.signal })
     if (_unmounted || requestId !== _chatRequestId) return
     chats.value = res.data?.data?.chats || []
-    total.value = res.data?.data?.total || chats.value.length
+    total.value = res.data?.data?.total ?? chats.value.length
     page.value = res.data?.data?.page || 1
+    chatsIndexing.value = res.data?.data?.indexing === true
+    if (chatsIndexing.value) _indexPollTimer = setTimeout(fetchChats, 1500)
+    syncCurrentChat()
   } catch {
     if (!_unmounted && requestId === _chatRequestId) chatsError.value = '聊天列表加载失败'
   } finally {
@@ -441,11 +546,13 @@ async function fetchChats() {
   }
 }
 
-function memberInfo(uid) { return groupRoles.value[uid] || {} }
+function memberInfo(uid) {
+  return groupRoles.value[uid] || {}
+}
 function roleLabel(uid) {
   const r = String(memberInfo(uid).role || '')
   if (r === 'owner') return '群主'
-  if (r === 'admin') return '管理'
+  if (r === 'admin') return '管理员'
   if (r) return '群员'
   return ''
 }
@@ -455,12 +562,17 @@ function roleClass(uid) {
   if (r === 'admin') return 'role-admin'
   return 'role-member'
 }
-function isBot(uid) { return !!memberInfo(uid).is_bot }
+function isBot(uid) {
+  return !!memberInfo(uid).is_bot
+}
 function canMuteMember(m) {
-  if (!botIsGroupAdmin.value || apiChatType.value !== 'group' || m.is_self || !m.user_id || isBot(m.user_id)) return false
+  if (!botIsGroupAdmin.value || apiChatType.value !== 'group' || m.is_self || !m.user_id || isBot(m.user_id))
+    return false
   return !['owner', 'admin'].includes(String(memberInfo(m.user_id).role || ''))
 }
-function currentAppid(m = null) { return String(m?.appid || current.value?.appid || app.currentBotId || '') }
+function currentAppid(m = null) {
+  return String(m?.appid || current.value?.appid || app.currentBotId || '')
+}
 function openMuteModal(m) {
   if (!canMuteMember(m)) return
   muteTarget.value = m
@@ -475,7 +587,15 @@ function closeMuteModal() {
   muteError.value = ''
 }
 async function submitMute() {
-  if (!muteTarget.value || muting.value) return
+  if (
+    !muteTarget.value ||
+    muting.value ||
+    !Number.isFinite(muteMinutes.value) ||
+    muteMinutes.value < 1 ||
+    muteMinutes.value > 43200
+  )
+    return
+  const selection = _selectId
   muting.value = true
   muteError.value = ''
   groupActionMessage.value = ''
@@ -484,13 +604,14 @@ async function submitMute() {
       group_id: current.value?.chat_id || '',
       user_id: muteTarget.value.user_id,
       appid: currentAppid(muteTarget.value),
-      minutes: muteMinutes.value,
+      minutes: muteMinutes.value
     })
+    if (_unmounted || selection !== _selectId) return
     groupActionMessage.value = res.data?.message || '禁言成功'
     muteModalVisible.value = false
     muteTarget.value = null
   } catch (e) {
-    muteError.value = e.response?.data?.message || e.message || '禁言操作失败'
+    if (selection === _selectId) muteError.value = e.response?.data?.message || e.message || '禁言操作失败'
   } finally {
     muting.value = false
   }
@@ -499,40 +620,77 @@ async function submitMute() {
 const _rolesCache = {}
 const _ROLES_CACHE_TTL = 120000
 async function fetchGroupRoles(groupId, appid = '') {
-  if (!groupId) { groupRoles.value = {}; botIsGroupAdmin.value = false; return }
+  if (!groupId) {
+    groupRoles.value = {}
+    botIsGroupAdmin.value = false
+    return
+  }
   const cacheKey = `${appid}:${groupId}`
-  const cached = _rolesCache[cacheKey]
-  if (cached && Date.now() - cached.ts < _ROLES_CACHE_TTL) {
-    groupRoles.value = cached.data
-    botIsGroupAdmin.value = cached.botIsAdmin
+  const ids = [...new Set(history.value.map(message => message.user_id).filter(Boolean))]
+  let cached = _rolesCache[cacheKey]
+  if (!cached || Date.now() - cached.ts >= _ROLES_CACHE_TTL) {
+    cached = _rolesCache[cacheKey] = { data: {}, known: new Set(), botIsAdmin: false, ts: Date.now() }
+  }
+  const missing = ids.filter(id => !cached.known.has(id))
+  if (!missing.length && cached.loaded) {
+    if (current.value?.chat_id === groupId && currentAppid() === String(appid)) {
+      groupRoles.value = cached.data
+      botIsGroupAdmin.value = cached.botIsAdmin
+    }
     return
   }
   try {
-    const res = await axios.post('/api/message/group-roles', { group_id: groupId, appid })
+    const res = await axios.post('/api/message/group-roles', { group_id: groupId, appid, user_ids: missing.slice(0, 500) })
     const data = res.data?.data || {}
     const botIsAdmin = res.data?.bot_is_admin === true
-    _rolesCache[cacheKey] = { data, botIsAdmin, ts: Date.now() }
-    groupRoles.value = data
-    botIsGroupAdmin.value = botIsAdmin
-  } catch { groupRoles.value = {}; botIsGroupAdmin.value = false }
+    Object.assign(cached.data, data)
+    missing.slice(0, 500).forEach(id => cached.known.add(id))
+    cached.botIsAdmin = botIsAdmin
+    cached.loaded = true
+    if (!_unmounted && current.value?.chat_id === groupId && currentAppid() === String(appid)) {
+      groupRoles.value = { ...cached.data }
+      botIsGroupAdmin.value = botIsAdmin
+    }
+  } catch {
+    if (current.value?.chat_id === groupId && currentAppid() === String(appid)) {
+      groupRoles.value = {}
+      botIsGroupAdmin.value = false
+    }
+  }
 }
 
 async function setRemark() {
-  if (!remarkEditing.value) return
+  if (!remarkEditing.value || remarkSaving.value) return false
+  const groupId = remarkEditing.value
+  const remark = remarkInput.value.trim(),
+    groupQq = remarkQqInput.value.trim()
+  remarkSaving.value = true
+  remarkError.value = ''
   try {
-    await axios.post('/api/message/remarks', { group_id: remarkEditing.value, remark: remarkInput.value.trim(), group_qq: remarkQqInput.value.trim() })
+    await axios.post('/api/message/remarks', {
+      group_id: groupId,
+      remark,
+      group_qq: groupQq
+    })
+    if (current.value?.chat_id === groupId) Object.assign(current.value, { remark, group_qq: groupQq })
     remarkModalVisible.value = false
     remarkEditing.value = null
     remarkInput.value = ''
     remarkQqInput.value = ''
     fetchChats()
-  } catch {}
+  } catch (error) {
+    remarkError.value = error.normalizedMessage || '备注保存失败，请重试'
+    return false
+  } finally {
+    remarkSaving.value = false
+  }
 }
 
 function startRemark(c) {
   remarkEditing.value = c.chat_id
   remarkInput.value = c.remark || ''
   remarkQqInput.value = c.group_qq || ''
+  remarkError.value = ''
   remarkModalVisible.value = true
 }
 function cancelRemark() {
@@ -543,6 +701,7 @@ function cancelRemark() {
 }
 
 function openAddRemark() {
+  remarkError.value = ''
   addRemarkOpenid.value = ''
   addRemarkName.value = ''
   addRemarkQq.value = ''
@@ -550,106 +709,252 @@ function openAddRemark() {
 }
 async function submitAddRemark() {
   const openid = addRemarkOpenid.value.trim()
-  if (!openid) return
+  if (remarkSaving.value) return false
+  if (!openid) {
+    remarkError.value = '请输入群 OpenID'
+    return false
+  }
+  remarkSaving.value = true
+  remarkError.value = ''
   try {
-    await axios.post('/api/message/remarks', { group_id: openid, remark: addRemarkName.value.trim(), group_qq: addRemarkQq.value.trim() })
+    await axios.post('/api/message/remarks', {
+      group_id: openid,
+      remark: addRemarkName.value.trim(),
+      group_qq: addRemarkQq.value.trim()
+    })
     addRemarkModalVisible.value = false
     fetchChats()
-  } catch {}
+  } catch (error) {
+    remarkError.value = error.normalizedMessage || '备注添加失败，请重试'
+    return false
+  } finally {
+    remarkSaving.value = false
+  }
 }
 function cancelAddRemark() {
   addRemarkModalVisible.value = false
 }
 function fetchChatsDebounced() {
   if (_fetchTimer) return
-  _fetchTimer = setTimeout(() => { _fetchTimer = null; fetchChats() }, 5000)
+  _fetchTimer = setTimeout(() => {
+    _fetchTimer = null
+    fetchChats()
+  }, 5000)
 }
 
-async function refreshCurrentChat() {
-  if (!current.value || _unmounted) return
+function resetConversation() {
+  _selectId++
+  current.value = null
+  history.value = []
+  historyLoading.value = false
+  historyError.value = ''
+  olderError.value = ''
+  sendErr.value = ''
+  lastMsgId.value = ''
+  oldestDate.value = ''
+  historyCursor.value = ''
+  hasMore.value = true
+  loadingOlder.value = false
+  groupRoles.value = {}
+  botIsGroupAdmin.value = false
+  groupActionMessage.value = ''
+  groupRefreshError.value = ''
+  rawDataMsg.value = null
+  quotedMsg.value = null
+  muteTarget.value = null
+  muteModalVisible.value = false
+  messageSearch.value = ''
+  messageDirection.value = 'all'
+  searchVisible.value = false
+  detailsVisible.value = false
+  showPreview.value = false
+  newMessageCount.value = 0
+  clearImg()
+  clearMediaFile()
+}
+
+let _refreshSelection = null
+async function refreshCurrentChat(prune = false) {
+  if (!current.value || _unmounted || historyLoading.value) return
+  const selection = _selectId
+  if (_refreshSelection === selection) return
+  _refreshSelection = selection
+  const before = prune ? new Set(history.value.map(messageKey)) : null
   try {
-    const res = await axios.post('/api/message/history', { chat_type: apiChatType.value, chat_id: current.value.chat_id, appid: app.currentBotId || '' })
-    if (_unmounted || !current.value) return
+    const res = await axios.post('/api/message/history', {
+      chat_type: apiChatType.value,
+      chat_id: current.value.chat_id,
+      appid: currentAppid(), limit: HISTORY_PAGE, include_raw: false
+    })
+    if (_unmounted || selection !== _selectId || !current.value) return
     const msgs = res.data?.data?.messages || []
     lastMsgId.value = res.data?.data?.last_msg_id || lastMsgId.value
-    if (!msgs.length) return
-    const seen = new Set(history.value.map(m => m.message_id).filter(Boolean))
-    const fresh = msgs.filter(m => m.message_id && !seen.has(m.message_id))
+    if (prune && stickToBottom.value) {
+      const seen = new Set(msgs.map(messageKey))
+      const live = history.value.filter(message => !before.has(messageKey(message)) && !seen.has(messageKey(message)))
+      msgs.forEach(prepareMessage)
+      history.value = [...msgs, ...live].sort((a, b) => String(a.timestamp).localeCompare(String(b.timestamp)))
+      historyCursor.value = res.data?.data?.next_cursor || ''
+      oldestDate.value = res.data?.data?.oldest_date || localDate()
+      hasMore.value = res.data?.data?.has_more === true
+      collectMentions(msgs)
+      resolveMessageReferences(history.value)
+      await nextTick()
+      scrollBottom()
+      return
+    }
+    const seen = new Set(history.value.map(messageKey))
+    const fresh = msgs.filter((message) => !seen.has(messageKey(message)))
     if (!fresh.length) return
-    const stick = isNearBottom()
-    for (const m of fresh) prepareMessage(m)
+    const stick = stickToBottom.value
+    for (const message of fresh) prepareMessage(message)
     collectMentions(fresh)
-    history.value = [...history.value, ...fresh]
+    history.value = [...history.value, ...fresh].sort((a, b) =>
+      String(a.timestamp).localeCompare(String(b.timestamp))
+    )
     resolveMessageReferences(history.value)
+    if (!stick) newMessageCount.value += fresh.length
     await nextTick()
     if (stick) scrollBottom()
-  } catch {}
+  } catch {
+    /* Keep the current history visible while reconnecting. */
+  } finally {
+    if (_refreshSelection === selection) _refreshSelection = null
+  }
 }
 
-function onWsReconnect() { refreshCurrentChat(); fetchChats() }
-function onVisibleChange() { if (document.visibilityState === 'visible') refreshCurrentChat() }
+function onWsReconnect() {
+  wsConnected.value = true
+  refreshCurrentChat()
+  fetchChats()
+}
+function onVisibleChange() {
+  if (document.visibilityState === 'visible') {
+    refreshCurrentChat()
+    fetchChats()
+  }
+}
 
 let _selectId = 0
 async function selectChat(chat) {
-  const myId = ++_selectId
-  current.value = chat; msgText.value = ''; sendErr.value = ''; imgFile.value = null; quotedMsg.value = null
-  hasMore.value = true; oldestDate.value = ''; loadingOlder.value = false; groupRoles.value = {}; botIsGroupAdmin.value = false; groupActionMessage.value = ''
+  resetConversation()
+  const selection = _selectId
+  current.value = chat
+  msgText.value = ''
+  stickToBottom.value = true
   if (isMobile.value) mobileView.value = 'chat'
-  history.value = []
+  historyLoading.value = true
   try {
-    const res = await axios.post('/api/message/history', { chat_type: apiChatType.value, chat_id: chat.chat_id, appid: app.currentBotId || '' })
-    if (myId !== _selectId) return
+    const res = await axios.post('/api/message/history', {
+      chat_type: apiChatType.value,
+      chat_id: chat.chat_id,
+      appid: currentAppid(), limit: HISTORY_PAGE, include_raw: false
+    })
+    if (_unmounted || selection !== _selectId) return
     const msgs = res.data?.data?.messages || []
-    for (const m of msgs) prepareMessage(m)
+    for (const message of msgs) prepareMessage(message)
     resolveMessageReferences(msgs)
     collectMentions(msgs)
-    history.value = msgs; lastMsgId.value = res.data?.data?.last_msg_id || ''
+    // Logs may arrive over WS while the initial HTTP request is in flight.
+    const seen = new Set(msgs.map(messageKey))
+    history.value = [...msgs, ...history.value.filter((message) => !seen.has(messageKey(message)))].sort(
+      (a, b) => String(a.timestamp).localeCompare(String(b.timestamp))
+    )
+    resolveMessageReferences(history.value)
+    const latestReply = [...history.value]
+      .reverse()
+      .find(
+        (message) =>
+          !message.is_self && message.message_id && String(message.timestamp || '').startsWith(localDate())
+      )
+    lastMsgId.value = latestReply?.message_id || res.data?.data?.last_msg_id || ''
     if (apiChatType.value === 'group') fetchGroupRoles(chat.chat_id, currentAppid())
-    oldestDate.value = res.data?.data?.oldest_date || ''
+    oldestDate.value = res.data?.data?.oldest_date || localDate()
+    historyCursor.value = res.data?.data?.next_cursor || ''
     hasMore.value = res.data?.data?.has_more !== false
-    await nextTick(); scrollBottom(); watchImgLoads()
-  } catch { if (myId === _selectId) { history.value = []; lastMsgId.value = ''; hasMore.value = false } }
+    historyLoading.value = false
+    await nextTick()
+    scrollBottom()
+  } catch (error) {
+    if (selection === _selectId && !_unmounted) {
+      historyError.value = error.normalizedMessage || '消息加载失败，请重试'
+      hasMore.value = false
+    }
+  } finally {
+    if (selection === _selectId && !_unmounted) historyLoading.value = false
+  }
 }
 
 async function loadOlder() {
-  if (loadingOlder.value || !hasMore.value || !current.value || !oldestDate.value) return
+  if (loadingOlder.value || historyLoading.value || !hasMore.value || !current.value || !oldestDate.value)
+    return
+  const selection = _selectId
   loadingOlder.value = true
+  olderError.value = ''
   try {
     const res = await axios.post('/api/message/history', {
-      chat_type: apiChatType.value, chat_id: current.value.chat_id,
-      appid: app.currentBotId || '', before_date: oldestDate.value,
+      chat_type: apiChatType.value,
+      chat_id: current.value.chat_id,
+      appid: currentAppid(),
+      ...(historyCursor.value ? { cursor: historyCursor.value } : { before_date: oldestDate.value }),
+      limit: HISTORY_PAGE, include_raw: false
     })
+    if (_unmounted || selection !== _selectId) return
     const msgs = res.data?.data?.messages || []
-    if (!msgs.length) { hasMore.value = false; return }
-    for (const m of msgs) prepareMessage(m)
-    collectMentions(msgs)
+    const seen = new Set(history.value.map(messageKey))
+    const fresh = msgs.filter((message) => !seen.has(messageKey(message)))
+    for (const message of fresh) prepareMessage(message)
+    collectMentions(fresh)
     const el = historyRef.value
-    const prevH = el ? el.scrollHeight : 0
-    history.value = [...msgs, ...history.value]
+    const prevHeight = el?.scrollHeight || 0
+    const prevTop = el?.scrollTop || 0
+    stickToBottom.value = false
+    history.value = [...fresh, ...history.value]
     resolveMessageReferences(history.value)
-    oldestDate.value = res.data?.data?.oldest_date || oldestDate.value
-    hasMore.value = res.data?.data?.has_more !== false
-    if (!res.data?.data?.oldest_date) hasMore.value = false
+    const nextDate = res.data?.data?.oldest_date
+    const nextCursor = res.data?.data?.next_cursor || ''
+    hasMore.value = res.data?.data?.has_more !== false && (nextCursor ? nextCursor !== historyCursor.value : !!nextDate && nextDate < oldestDate.value)
+    historyCursor.value = nextCursor
+    oldestDate.value = nextDate || oldestDate.value
+    if (apiChatType.value === 'group') fetchGroupRoles(current.value.chat_id, currentAppid())
     await nextTick()
-    if (el) el.scrollTop = el.scrollHeight - prevH
-  } catch { hasMore.value = false }
-  finally { loadingOlder.value = false }
+    if (el) el.scrollTop = prevTop + el.scrollHeight - prevHeight
+  } catch (error) {
+    if (selection === _selectId) olderError.value = error.normalizedMessage || '历史消息加载失败'
+  } finally {
+    if (selection === _selectId) loadingOlder.value = false
+  }
 }
 
 function onHistoryScroll() {
-  const el = historyRef.value
-  if (el && el.scrollTop <= 0 && hasMore.value && !loadingOlder.value) loadOlder()
+  stickToBottom.value = isNearBottom()
+  if (stickToBottom.value) newMessageCount.value = 0
+}
+function onMediaLoad() {
+  if (stickToBottom.value && !loadingOlder.value) nextTick(scrollBottom)
 }
 
 async function refreshMsgId() {
   if (!current.value) return
-  try { const r = await axios.post('/api/message/history', { chat_type: apiChatType.value, chat_id: current.value.chat_id, appid: app.currentBotId || '', limit: 1 }); lastMsgId.value = r.data?.data?.last_msg_id || lastMsgId.value } catch {}
+  const selection = _selectId
+  try {
+    const res = await axios.post('/api/message/history', {
+      chat_type: apiChatType.value,
+      chat_id: current.value.chat_id,
+      appid: currentAppid(),
+      limit: 1, include_raw: false
+    })
+    if (!_unmounted && selection === _selectId)
+      lastMsgId.value = res.data?.data?.last_msg_id || lastMsgId.value
+  } catch {
+    /* Existing reply ID remains available. */
+  }
 }
 
 function requestGroupRefresh(chat) {
   return axios.post('/api/message/group-info/refresh', {
     group_id: chat.chat_id,
-    appid: chat.appid || app.currentBotId || '',
+    appid: chat.appid || app.currentBotId || ''
   })
 }
 
@@ -660,144 +965,240 @@ function isHandledGroupError(error) {
 
 function syncCurrentChat() {
   if (!current.value) return
-  const refreshed = chats.value.find(c => c.chat_id === current.value.chat_id && (!current.value.appid || c.appid === current.value.appid))
+  const refreshed = chats.value.find(
+    (c) => c.chat_id === current.value.chat_id && (!current.value.appid || c.appid === current.value.appid)
+  )
   if (refreshed) Object.assign(current.value, refreshed)
-  else current.value = null
 }
 
 async function refreshGroup(chat) {
+  let removed = false
   try {
     await requestGroupRefresh(chat)
   } catch (error) {
     if (!isHandledGroupError(error)) throw error
+    removed = true
   }
   await fetchChats()
-  syncCurrentChat()
+  if (removed && current.value?.chat_id === chat.chat_id && current.value?.appid === chat.appid) {
+    resetConversation()
+    mobileView.value = 'list'
+  }
 }
 
 async function refreshGroupInfo() {
   const chat = current.value
   if (!chat?.chat_id || apiChatType.value !== 'group' || refreshingGroup.value || refreshingPage.value) return
+  const selection = _selectId
+  const appid = currentAppid()
   refreshingGroup.value = chat.chat_id
   groupRefreshError.value = ''
   try {
     await refreshGroup(chat)
-    const cacheKey = `${currentAppid()}:${chat.chat_id}`
+    if (_unmounted || selection !== _selectId) return
+    const cacheKey = `${appid}:${chat.chat_id}`
     delete _rolesCache[cacheKey]
-    await fetchGroupRoles(chat.chat_id, currentAppid())
+    await fetchGroupRoles(chat.chat_id, appid)
   } catch (e) {
-    groupRefreshError.value = e.response?.data?.message || e.message || '群信息更新失败'
+    if (selection === _selectId)
+      groupRefreshError.value = e.response?.data?.message || e.message || '群信息更新失败'
   } finally {
     refreshingGroup.value = ''
   }
 }
 
 async function refreshPageGroups() {
-  const groups = chats.value.filter(c => c.chat_id).slice(0, 25)
+  const groups = chats.value.filter((c) => c.chat_id).slice(0, 25)
   if (apiChatType.value !== 'group' || !groups.length || refreshingPage.value || refreshingGroup.value) return
   refreshingPage.value = true
+  const context = `${chatType.value}:${app.currentBotId}`
   groupRefreshError.value = ''
   let failed = 0
-  for (let i = 0; i < groups.length && !_unmounted; i++) {
+  for (
+    let i = 0;
+    i < groups.length && !_unmounted && context === `${chatType.value}:${app.currentBotId}`;
+    i++
+  ) {
     refreshingGroup.value = groups[i].chat_id
     try {
       await refreshGroup(groups[i])
-    } catch { failed++ }
-    if (i < groups.length - 1) await new Promise(resolve => setTimeout(resolve, 1000))
+    } catch {
+      failed++
+    }
+    if (i < groups.length - 1) await new Promise((resolve) => setTimeout(resolve, 1000))
   }
   refreshingGroup.value = ''
   refreshingPage.value = false
-  if (failed) groupRefreshError.value = `${failed} 个群更新失败`
+  if (failed && context === `${chatType.value}:${app.currentBotId}`)
+    groupRefreshError.value = `${failed} 个群更新失败`
 }
 
-function isNearBottom() { const el = historyRef.value; if (!el) return true; return el.scrollHeight - el.scrollTop - el.clientHeight < 80 }
-function scrollBottom() { const el = historyRef.value; if (el) el.scrollTop = el.scrollHeight }
-
-let _autoScroll = false
-function watchImgLoads() {
-  _autoScroll = true
-  const el = historyRef.value; if (!el) return
-  const stop = () => { _autoScroll = false; el.removeEventListener('wheel', stop); el.removeEventListener('touchmove', stop) }
-  el.addEventListener('wheel', stop, { once: true, passive: true })
-  el.addEventListener('touchmove', stop, { once: true, passive: true })
-  const handler = () => { if (_autoScroll) scrollBottom() }
-  el.querySelectorAll('img').forEach(img => { if (!img.complete) img.addEventListener('load', handler, { once: true }) })
-  setTimeout(stop, 3000)
+function isNearBottom() {
+  const el = historyRef.value
+  if (!el) return true
+  return el.scrollHeight - el.scrollTop - el.clientHeight < 80
 }
+function scrollBottom() {
+  const el = historyRef.value
+  if (el) el.scrollTop = el.scrollHeight
+  stickToBottom.value = true
+  newMessageCount.value = 0
+}
+watch(historyRef, (element) => {
+  historyResizeObserver?.disconnect()
+  if (!element) return
+  historyResizeObserver = new ResizeObserver(() => {
+    if (stickToBottom.value && !loadingOlder.value) scrollBottom()
+  })
+  historyResizeObserver.observe(element)
+  const inner = element.querySelector('.history-inner')
+  if (inner) historyResizeObserver.observe(inner)
+})
 
 const mentionNicks = ref({})
 const _mentionPending = new Set()
+const _nicknameQueue = new Set()
+let _nicknameTimer = null
 const MENTION_RE = /<@!?([^<>\s]+)>/g
+function queueNickname(id) {
+  if (!id || nickCache[id] || _mentionPending.has(id)) return
+  _mentionPending.add(id)
+  _nicknameQueue.add(id)
+  if (!_nicknameTimer) _nicknameTimer = setTimeout(loadQueuedNicknames, 100)
+}
+async function loadQueuedNicknames() {
+  _nicknameTimer = null
+  const ids = [..._nicknameQueue].slice(0, 500)
+  ids.forEach(id => _nicknameQueue.delete(id))
+  if (!ids.length || _unmounted) return
+  try {
+    const res = await axios.post('/api/message/nicknames', { user_ids: ids })
+    if (_unmounted) return
+    const nicks = res.data?.data?.nicknames || {}
+    for (const [id, name] of Object.entries(nicks)) {
+      nickCache[id] = name
+      mentionNicks.value[id] = name
+    }
+    for (const message of history.value) {
+      if (!message.is_self && nicks[message.user_id]) message.nickname = nicks[message.user_id]
+    }
+  } catch {
+    /* Names can be retried by the next message without delaying its content. */
+  } finally {
+    ids.forEach(id => _mentionPending.delete(id))
+    if (_nicknameQueue.size && !_unmounted) _nicknameTimer = setTimeout(loadQueuedNicknames, 100)
+  }
+}
 function collectMentions(msgs) {
-  const ids = new Set()
   for (const m of msgs) {
     for (const mt of String(m.content || '').matchAll(MENTION_RE)) {
       const id = mt[1]
-      if (!(id in mentionNicks.value) && !_mentionPending.has(id)) { ids.add(id); _mentionPending.add(id) }
+      if (nickCache[id]) mentionNicks.value[id] = nickCache[id]
+      else if (!(id in mentionNicks.value)) queueNickname(id)
     }
   }
-  if (!ids.size) return
-  axios.post('/api/message/nicknames', { user_ids: [...ids] })
-    .then(res => {
-      const nicks = res.data?.data?.nicknames || {}
-      const merged = { ...mentionNicks.value }
-      let changed = false
-      for (const id of ids) { _mentionPending.delete(id); if (nicks[id]) { merged[id] = nicks[id]; changed = true } }
-      if (!changed) return
-      mentionNicks.value = merged
-      for (const m of history.value) {
-        if (!m._media && m.content && MENTION_RE.test(m.content)) { MENTION_RE.lastIndex = 0; m._html = renderContent(m.content) }
-        MENTION_RE.lastIndex = 0
-      }
-    })
-    .catch(() => { for (const id of ids) _mentionPending.delete(id) })
 }
 
-async function getNick(uid) {
-  if (!uid) return '未知用户'; if (nickCache[uid]) return nickCache[uid]
-  try { const n = (await axios.post('/api/message/nickname', { user_id: uid })).data?.data?.nickname || `用户${uid.slice(-6)}`; nickCache[uid] = n; return n } catch { return `用户${uid.slice(-6)}` }
+function matchesCurrentLog(data) {
+  if (!current.value || (currentAppid() && String(data.appid || '') !== currentAppid())) return false
+  const gid = data.group_id || '',
+    uid = data.user_id || ''
+  return apiChatType.value === 'group' ? gid === current.value.chat_id : uid === current.value.chat_id && (!gid || gid === 'c2c')
 }
 
-async function onNewLog(data) {
-  if (!data || _unmounted) return
-  if (data.log_type === 'audit') { onAuditLog(data); return }
-  if (data.log_type === 'lifecycle') { onLifecycleLog(data); return }
-  if (data.log_type !== 'message') return; fetchChatsDebounced(); if (!current.value) return
-  const gid = data.group_id || '', uid = data.user_id || '', cid = current.value.chat_id
-  if ((apiChatType.value === 'group' && gid === cid) || (apiChatType.value === 'user' && uid === cid && !gid)) {
-    const nick = data.is_bot ? (data.bot_name || 'Bot') : await getNick(uid)
-    if (_unmounted) return
-    const item = prepareMessage({ id: history.value.length, message_id: data.message_id || '', reference_id: data.reference_id || '', user_id: uid, appid: data.appid || app.currentBot?.appid || '', bot_qq: data.bot_qq || '', nickname: nick, content: data.content || '', timestamp: data.timestamp || '', is_self: !!data.is_bot, source: data.source || '', raw_message: data.raw_message || '' })
-    collectMentions([item])
-    history.value.push(item)
-    if (history.value.length > 800) history.value.splice(0, history.value.length - 600)
-    resolveMessageReferences(history.value)
-    if (isNearBottom()) nextTick(scrollBottom)
-  }
-}
-
-async function onLifecycleLog(data) {
-  if (!current.value || apiChatType.value !== 'group') return
-  const evtType = data.type || ''
-  if (evtType !== 'group_member_add' && evtType !== 'group_member_del') return
-  const gid = data.group_id || '', uid = data.user_id || '', cid = current.value.chat_id
-  if (gid !== cid) return
-  const nick = await getNick(uid)
+const _liveMessages = []
+let _liveFrame = null
+let _rolesTimer = null
+function flushLiveMessages() {
+  _liveFrame = null
   if (_unmounted) return
-  history.value.push({
-    id: `lc_rt_${Date.now()}`,
-    message_id: '', reference_id: '', user_id: uid,
-    appid: data.appid || app.currentBot?.appid || '',
-    bot_qq: '', nickname: nick, content: '', timestamp: data.timestamp || '',
-    is_self: false, source: '', raw_message: '', recalled: false,
-    event_type: evtType === 'group_member_add' ? 'member_add' : 'member_remove',
+  const seen = new Set(history.value.map(messageKey))
+  const fresh = []
+  for (const { selection, item } of _liveMessages.splice(0)) {
+    if (selection !== _selectId || seen.has(messageKey(item))) continue
+    seen.add(messageKey(item))
+    fresh.push(item)
+    if (!item.is_self && item.user_id && !nickCache[item.user_id]) queueNickname(item.user_id)
+  }
+  if (!fresh.length) return
+  const stick = stickToBottom.value
+  collectMentions(fresh)
+  history.value = [...history.value, ...fresh].sort((a, b) => String(a.timestamp).localeCompare(String(b.timestamp)))
+  const latest = [...history.value].reverse().find(message => !message.is_self && !message.event_type && message.message_id && String(message.timestamp).startsWith(localDate()))
+  if (latest) lastMsgId.value = latest.message_id
+  resolveMessageReferences(history.value)
+  if (apiChatType.value === 'group' && !_rolesTimer) {
+    _rolesTimer = setTimeout(() => {
+      _rolesTimer = null
+      if (current.value) fetchGroupRoles(current.value.chat_id, currentAppid())
+    }, 250)
+  }
+  if (stick) {
+    nextTick(scrollBottom)
+    if (history.value.length > 800) refreshCurrentChat(true)
+  } else newMessageCount.value += fresh.length
+}
+function queueLiveMessage(item) {
+  _liveMessages.push({ selection: _selectId, item })
+  if (_liveFrame === null) _liveFrame = requestAnimationFrame(flushLiveMessages)
+}
+function onNewLog(data) {
+  if (!data || _unmounted) return
+  if (data.log_type === 'audit') {
+    onAuditLog(data)
+    return
+  }
+  if (data.log_type === 'lifecycle') {
+    onLifecycleLog(data)
+    return
+  }
+  if (data.log_type !== 'message') return
+  if (document.visibilityState !== 'visible') return
+  if ((!app.currentBotId || String(data.appid || '') === String(app.currentBotId)) && document.visibilityState === 'visible') fetchChatsDebounced()
+  if (!matchesCurrentLog(data)) return
+  const uid = data.user_id || ''
+  const nick = data.is_bot ? data.bot_name || 'Bot' : nickCache[uid] || `用户${uid.slice(-6)}`
+  const item = prepareMessage({
+    id: `rt_${Date.now()}_${_liveMessages.length}`,
+    message_id: data.message_id || '',
+    reference_id: data.reference_id || '',
+    user_id: uid,
+    appid: data.appid || '',
+    bot_qq: data.bot_qq || '',
+    nickname: nick,
+    content: data.content || '',
+    timestamp: data.timestamp || '',
+    is_self: !!data.is_bot,
+    source:
+      data.source ||
+      (data.plugin_name === 'WebPanel' ? 'web_panel' : data.plugin_name === 'onebot_adapter' ? 'onebot' : ''),
+    raw_message: data.raw_message || ''
   })
-  if (isNearBottom()) nextTick(scrollBottom)
+  queueLiveMessage(item)
+}
+
+function onLifecycleLog(data) {
+  if (document.visibilityState !== 'visible') return
+  if (apiChatType.value !== 'group' || !matchesCurrentLog(data)) return
+  if (!['group_member_add', 'group_member_del'].includes(data.type)) return
+  const uid = data.user_id || ''
+  queueLiveMessage({
+    id: `lc_rt_${Date.now()}_${_liveMessages.length}`,
+    message_id: '',
+    user_id: data.user_id || '',
+    appid: data.appid || '',
+    nickname: nickCache[uid] || `用户${uid.slice(-6)}`,
+    content: '',
+    timestamp: data.timestamp || '',
+    is_self: false,
+    event_type: data.type === 'group_member_add' ? 'member_add' : 'member_remove'
+  })
 }
 
 function onAuditLog(data) {
+  if (data.appid && currentAppid() && String(data.appid) !== currentAppid()) return
   if (!data.audit_id) return
-  const m = history.value.find(msg => msg.message_id === data.audit_id)
+  const m = history.value.find((msg) => msg.message_id === data.audit_id)
   if (m) {
     if (data.passed && data.message_id) {
       m.message_id = data.message_id
@@ -807,29 +1208,89 @@ function onAuditLog(data) {
   }
 }
 
-function onImgSelect(e) { const f = e.target.files?.[0]; if (f) { imgFile.value = f; imgPreview.value = URL.createObjectURL(f) }; e.target.value = '' }
-function clearImg() { if (imgPreview.value) URL.revokeObjectURL(imgPreview.value); imgFile.value = null; imgPreview.value = '' }
-function onMediaSelect(e) { const f = e.target.files?.[0]; if (f) mediaFile.value = f; e.target.value = '' }
-function clearMediaFile() { mediaFile.value = null }
+function onImgSelect(e) {
+  const f = e.target.files?.[0]
+  if (f) {
+    clearImg()
+    imgFile.value = f
+    imgPreview.value = URL.createObjectURL(f)
+  }
+  e.target.value = ''
+}
+function clearImg() {
+  if (imgPreview.value) URL.revokeObjectURL(imgPreview.value)
+  imgFile.value = null
+  imgPreview.value = ''
+}
+function onMediaSelect(e) {
+  const f = e.target.files?.[0]
+  if (f) mediaFile.value = f
+  e.target.value = ''
+}
+function clearMediaFile() {
+  mediaFile.value = null
+}
 
-function onKeydown(e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMsg() } }
+function resizeEditor() {
+  const editor = editorRef.value
+  if (!editor) return
+  editor.style.height = 'auto'
+  const maximum = Number.parseFloat(getComputedStyle(editor).maxHeight) || 120
+  editor.style.height = `${Math.min(editor.scrollHeight, maximum)}px`
+}
+
+function onKeydown(e) {
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229) {
+    e.preventDefault()
+    sendMsg()
+  }
+}
 
 async function sendMsg() {
   if (sending.value || !current.value) return
-  sending.value = true; sendErr.value = ''
+  const selection = _selectId
+  sending.value = true
+  sendErr.value = ''
   try {
     let content = ''
-    if (msgType.value === 'ark') { const kv = buildArkKv(); if (!kv.length) { sendErr.value = '请至少填写一个字段'; sending.value = false; return }; content = JSON.stringify(kv) }
-    else if (msgType.value === 'card') { const obj = buildCardContent(); if (!Object.keys(obj).length) { sendErr.value = '请至少填写一个字段'; sending.value = false; return }; content = JSON.stringify(obj) }
-    else { content = msgText.value.trim(); if (!content && !imgFile.value && !mediaFile.value) { sending.value = false; return } }
+    if (msgType.value === 'ark') {
+      const kv = buildArkKv()
+      if (!kv.length) {
+        sendErr.value = '请至少填写一个字段'
+        sending.value = false
+        return
+      }
+      content = JSON.stringify(kv)
+    } else if (msgType.value === 'card') {
+      const obj = buildCardContent()
+      if (!Object.keys(obj).length) {
+        sendErr.value = '请至少填写一个字段'
+        sending.value = false
+        return
+      }
+      content = JSON.stringify(obj)
+    } else {
+      content = msgText.value.trim()
+      if (!content && !imgFile.value && !mediaFile.value) {
+        sending.value = false
+        return
+      }
+    }
     const fd = new FormData()
-    fd.append('chat_type', apiChatType.value); fd.append('chat_id', current.value.chat_id)
+    fd.append('chat_type', apiChatType.value)
+    fd.append('chat_id', current.value.chat_id)
     fd.append('appid', app.currentBotId || current.value.appid || '')
-    fd.append('msg_type', msgType.value); fd.append('content', content); fd.append('msg_id', lastMsgId.value)
+    fd.append('msg_type', msgType.value)
+    fd.append('content', content)
+    fd.append('msg_id', lastMsgId.value)
     fd.append('send_mode', sendMode.value)
     if (isCustomSendMode.value) {
       const cid = customSendId.value.trim()
-      if (!cid) { sendErr.value = sendMode.value === 'custom_event_id' ? '请输入事件 ID' : '请输入 msg_id'; sending.value = false; return }
+      if (!cid) {
+        sendErr.value = sendMode.value === 'custom_event_id' ? '请输入事件 ID' : '请输入 msg_id'
+        sending.value = false
+        return
+      }
       fd.append('custom_id', cid)
     }
     if (quotedMsg.value) {
@@ -844,1683 +1305,1181 @@ async function sendMsg() {
     if (msgType.value === 'ark') fd.append('ark_template_id', arkTpl.value)
     if (msgType.value === 'card') fd.append('card_type', 'tuwen')
     const res = await axios.post('/api/message/send', fd)
-    if (res.data?.success) { msgText.value = ''; clearImg(); clearMediaFile(); clearQuote(); if (msgType.value === 'ark') { arkFields.value = {}; arkList.value = '' }; if (msgType.value === 'card') cardFields.value = {} }
-    else sendErr.value = res.data?.message || '发送失败'
-  } catch (e) { sendErr.value = e.response?.data?.message || e.message || '发送失败' }
-  finally { sending.value = false }
+    if (_unmounted || selection !== _selectId) return
+    if (res.data?.success) {
+      showPreview.value = false
+      msgText.value = ''
+      clearImg()
+      clearMediaFile()
+      clearQuote()
+      if (msgType.value === 'ark') {
+        arkFields.value = {}
+        arkList.value = ''
+      }
+      if (msgType.value === 'card') cardFields.value = {}
+    } else sendErr.value = res.data?.message || '发送失败'
+  } catch (e) {
+    if (selection === _selectId) sendErr.value = e.response?.data?.message || e.message || '发送失败'
+  } finally {
+    sending.value = false
+  }
 }
 
-watch(chatType, () => { current.value = null; quotedMsg.value = null; history.value = []; chats.value = []; lastMsgId.value = ''; oldestDate.value = ''; hasMore.value = true; page.value = 1; remarkEditing.value = null; groupRoles.value = {}; botIsGroupAdmin.value = false; groupActionMessage.value = ''; fetchChats() })
+watch(chatType, () => {
+  resetConversation()
+  chats.value = []
+  total.value = 0
+  page.value = 1
+  mobileView.value = 'list'
+  fetchChats()
+})
 let _searchTimer = null
-watch(chatSearch, () => { if (_searchTimer) clearTimeout(_searchTimer); _searchTimer = setTimeout(() => { _searchTimer = null; page.value = 1; fetchChats() }, 300) })
-watch(() => app.currentBotId, () => { current.value = null; quotedMsg.value = null; history.value = []; lastMsgId.value = ''; oldestDate.value = ''; hasMore.value = true; page.value = 1; fetchChats() })
+watch(chatSearch, () => {
+  clearTimeout(_searchTimer)
+  _searchTimer = setTimeout(() => {
+    _searchTimer = null
+    page.value = 1
+    fetchChats()
+  }, 300)
+})
+watch(
+  () => app.currentBotId,
+  () => {
+    resetConversation()
+    chats.value = []
+    total.value = 0
+    page.value = 1
+    mobileView.value = 'list'
+    fetchChats()
+  }
+)
 
-onMounted(() => { fetchChats(); on('new_log', onNewLog); on('open', onWsReconnect); window.addEventListener('resize', handleResize); document.addEventListener('visibilitychange', onVisibleChange) })
-onUnmounted(() => { _unmounted = true; off('new_log', onNewLog); off('open', onWsReconnect); window.removeEventListener('resize', handleResize); document.removeEventListener('visibilitychange', onVisibleChange); if (_fetchTimer) { clearTimeout(_fetchTimer); _fetchTimer = null } })
+onMounted(() => {
+  fetchChats()
+  on('new_log', onNewLog)
+  on('open', onWsReconnect)
+  on('close', onConnectionClose)
+  window.addEventListener('resize', handleResize)
+  window.addEventListener('keydown', onEscape)
+  document.addEventListener('visibilitychange', onVisibleChange)
+})
+onUnmounted(() => {
+  _unmounted = true
+  _selectId++
+  _chatRequestId++
+  off('new_log', onNewLog)
+  off('open', onWsReconnect)
+  off('close', onConnectionClose)
+  window.removeEventListener('resize', handleResize)
+  window.removeEventListener('keydown', onEscape)
+  document.removeEventListener('visibilitychange', onVisibleChange)
+  clearTimeout(_fetchTimer)
+  clearTimeout(_indexPollTimer)
+  clearTimeout(_nicknameTimer)
+  clearTimeout(_rolesTimer)
+  if (_liveFrame !== null) cancelAnimationFrame(_liveFrame)
+  _chatController?.abort()
+  clearTimeout(_searchTimer)
+  clearTimeout(_copyTimer)
+  historyResizeObserver?.disconnect()
+  clearImg()
+})
 </script>
 
 <template>
-  <div class="msg-page">
+  <section class="msg-page" aria-label="消息记录">
     <div class="msg-layout">
-      <!-- 聊天列表 -->
-      <div :class="['chat-list-panel', { 'mobile-hidden': isMobile && mobileView !== 'list' }]">
-        <div class="panel-header">
-          <span>聊天列表</span>
-          <button class="panel-tool-btn panel-add-btn" title="添加备注" @click="openAddRemark">+备注</button>
-          <button class="panel-tool-btn panel-refresh-btn" :disabled="apiChatType !== 'group' || !chats.length || !!refreshingGroup || refreshingPage" title="刷新本页前 25 个群的信息与机器人状态" @click="refreshPageGroups">
-            <span :class="{ spinning: refreshingPage }">↻</span>
+      <aside
+        class="chat-list-panel"
+        :class="{ 'mobile-hidden': isMobile && mobileView !== 'list' }"
+        aria-label="会话列表"
+      >
+        <div class="list-heading">
+          <div>
+            <h2>会话</h2>
+            <span class="total-badge">{{ total }}</span>
+          </div>
+          <button class="icon-button" title="添加群备注" aria-label="添加群备注" @click="openAddRemark">
+            <SvgIcon name="plus" :size="20" />
           </button>
-          <n-radio-group v-model:value="chatType" size="tiny">
-            <n-radio-button value="full_access">全量</n-radio-button>
-            <n-radio-button value="remark">备注</n-radio-button>
-            <n-radio-button value="group">群聊</n-radio-button>
-            <n-radio-button value="user">私聊</n-radio-button>
-          </n-radio-group>
         </div>
-        <n-input v-model:value="chatSearch" placeholder="搜索..." size="small" clearable class="chat-search" />
-        <div class="chat-items">
-          <div v-for="c in chats" :key="c.chat_id" :class="['chat-item', { active: current?.chat_id === c.chat_id }]" @click="selectChat(c)">
-            <div class="chat-avatar-wrap">
-              <img v-if="chatType === 'user' && c.appid && c.chat_id" class="chat-avatar" :src="avatarUrl(c.appid, c.chat_id)" loading="lazy" @error="e => e.target.style.display='none'" />
-              <img v-else-if="c.group_qq" class="chat-avatar" :src="groupQqAvatar(c.group_qq)" loading="lazy" @error="e => e.target.style.display='none'" />
-              <img v-else-if="app.isAllBots && c.appid && getBotAvatar(c.appid)" class="chat-avatar" :src="getBotAvatar(c.appid)" loading="lazy" @error="e => e.target.style.display='none'" />
-              <div v-else class="chat-avatar-fallback">{{ (c.nickname || c.chat_id || '?').charAt(0) }}</div>
-              <span v-if="c.is_full_access" class="chat-avatar-badge">全</span>
-            </div>
-            <div class="chat-info">
-              <div class="chat-nick">
-                <span class="chat-nick-text">{{ chatDisplayName(c) }}</span>
-                <span v-if="c.in_group === false" class="chat-left-tag">已退群</span>
-              </div>
-              <div class="chat-subtitle">
-                <span v-if="(chatType === 'user' && c.nickname) || (chatType !== 'user' && c.remark)" class="chat-id">{{ c.chat_id }}</span>
-                <span class="chat-preview">{{ c.last_content || '' }}</span>
-              </div>
-            </div>
-            <div class="chat-meta">
-              <div class="chat-time">{{ shortTime(c.last_time) }}</div>
-              <div class="chat-meta-row">
-                <div v-if="c.msg_count" class="chat-count">{{ c.msg_count }}</div>
-                <button v-if="chatType !== 'user'" class="remark-btn" title="备注" @click.stop="startRemark(c)">✎</button>
+        <nav class="chat-type-tabs" aria-label="会话类型">
+          <button
+            v-for="option in chatTypeOptions"
+            :key="option.value"
+            :class="{ active: chatType === option.value }"
+            :aria-pressed="chatType === option.value"
+            @click="chatType = option.value"
+          >
+            {{ option.label }}
+          </button>
+        </nav>
+        <label class="chat-search">
+          <SvgIcon name="search" :size="16" />
+          <input v-model="chatSearch" type="search" placeholder="搜索会话名称或 ID" aria-label="搜索会话" />
+          <button
+            v-if="chatSearch"
+            class="clear-search"
+            type="button"
+            aria-label="清除会话搜索"
+            @click.prevent="chatSearch = ''"
+          >
+            <SvgIcon name="x" :size="14" />
+          </button>
+        </label>
+        <div class="list-section-label">
+          <span>{{ chatSearch ? '搜索结果' : chatType === 'remark' ? '已备注的会话' : '最近会话' }}</span>
+          <button
+            v-if="apiChatType === 'group'"
+            :disabled="!chats.length || !!refreshingGroup || refreshingPage"
+            title="更新本页前 25 个群的信息"
+            @click="refreshPageGroups"
+          >
+            <SvgIcon name="refresh" :size="12" :class="{ spinning: refreshingPage }" />
+            {{ refreshingPage ? '更新中' : '更新群信息' }}
+          </button>
+          <span v-else>今日</span>
+        </div>
+        <div v-if="chatsError" class="list-error" role="alert">
+          <SvgIcon name="alert-circle" :size="15" />
+          <span>{{ chatsError }}</span>
+          <button @click="fetchChats">重试</button>
+        </div>
+        <div class="chat-items" :aria-busy="chatsLoading">
+          <div v-if="chatsLoading && !chats.length" class="chat-skeletons">
+            <div v-for="n in 6" :key="n" class="chat-skeleton">
+              <i />
+              <div>
+                <span />
+                <span />
               </div>
             </div>
           </div>
-          <div v-if="chatsLoading && !chats.length" class="chat-empty">正在加载...</div>
-          <div v-else-if="chatsError && !chats.length" class="chat-empty">{{ chatsError }}</div>
-          <div v-else-if="!chats.length" class="chat-empty">暂无聊天</div>
+          <template v-else>
+            <article
+              v-for="chat in chats"
+              :key="`${chat.appid}:${chat.chat_id}`"
+              class="chat-item"
+              :class="{ active: current?.chat_id === chat.chat_id && current?.appid === chat.appid }"
+            >
+              <button
+                class="chat-select"
+                :aria-current="
+                  current?.chat_id === chat.chat_id && current?.appid === chat.appid ? 'true' : undefined
+                "
+                @click="selectChat(chat)"
+              >
+                <span class="chat-avatar-wrap">
+                  <MessageAvatar
+                    :src="chatAvatar(chat)"
+                    :name="chatDisplayName(chat)"
+                    :group="chatType !== 'user'"
+                    :size="isMobile ? 44 : 36"
+                  />
+                  <GroupStatus
+                    v-if="apiChatType === 'group'"
+                    class="chat-status-dots"
+                    :full-access="!!chat.is_full_access"
+                    :proactive="!!chat.allow_proactive_msg"
+                  />
+                </span>
+                <span class="chat-info">
+                  <span class="chat-name-row">
+                    <span class="chat-nick" :title="chatDisplayName(chat)">{{ chatDisplayName(chat) }}</span>
+                    <span v-if="chat.in_group === false" class="left-tag">已退群</span>
+                  </span>
+                  <span class="chat-preview">{{ chatPreview(chat) }}</span>
+                  <span v-if="app.isAllBots && chat.bot_name" class="chat-bot-name">{{ chat.bot_name }}</span>
+                </span>
+                <span class="chat-meta">
+                  <time>{{ shortTime(chat.last_time) }}</time>
+                  <span
+                    v-if="chat.msg_count"
+                    class="chat-count"
+                    :class="{ 'has-remark': chatType !== 'user' }"
+                  >
+                    {{ chat.msg_count > 999 ? '999+' : chat.msg_count }}
+                  </span>
+                </span>
+              </button>
+              <button
+                v-if="chatType !== 'user'"
+                class="chat-remark"
+                title="编辑群备注"
+                :aria-label="`编辑 ${chatDisplayName(chat)} 的备注`"
+                @click="startRemark(chat)"
+              >
+                <SvgIcon name="edit" :size="13" />
+              </button>
+            </article>
+            <div v-if="!chats.length && !chatsError" class="list-empty">
+              <span><SvgIcon :name="chatSearch ? 'search' : 'chat-group'" :size="26" /></span>
+              <strong>{{ chatSearch ? '没有找到相关会话' : '暂无会话' }}</strong>
+              <p>{{ chatSearch ? '试试其他名称或会话 ID' : '收到消息后，会话将显示在这里' }}</p>
+              <button v-if="chatSearch" class="text-button" @click="chatSearch = ''">清除搜索</button>
+            </div>
+          </template>
         </div>
-        <div v-if="total > PAGE" class="chat-pager">
-          <button :disabled="page <= 1" @click="page--; fetchChats()">&lt;</button>
-          <span>{{ page }} / {{ Math.ceil(total / PAGE) }}</span>
-          <button :disabled="page >= Math.ceil(total / PAGE)" @click="page++; fetchChats()">&gt;</button>
-        </div>
-      </div>
-
-      <!-- 聊天记录面板 -->
-      <div :class="['chat-history-panel', { 'mobile-hidden': isMobile && mobileView !== 'chat' }]">
-        <template v-if="current">
-          <div class="panel-header">
-            <button v-if="isMobile" class="mobile-back-btn" @click="goBackToList">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+        <footer class="chat-list-footer">
+          <span>共 {{ total }} 个会话</span>
+          <div v-if="total > PAGE" class="chat-pager">
+            <button
+              class="icon-button"
+              :disabled="page <= 1 || chatsLoading"
+              aria-label="上一页会话"
+              @click="changePage(-1)"
+            >
+              <SvgIcon name="chevron-back" :size="15" />
             </button>
-            <span class="panel-header-title">{{ chatDisplayName(current) }}</span>
-            <span v-if="apiChatType === 'group' && (current.remark || current.group_name)" class="panel-header-group-id">{{ current.chat_id }}</span>
-            <template v-if="apiChatType === 'group'">
-              <button class="header-action-btn" :disabled="!!refreshingGroup || refreshingPage" title="更新群信息与机器人状态" @click="refreshGroupInfo">
-                <span :class="{ spinning: refreshingGroup === current.chat_id }">↻</span>
-                <span>更新群信息</span>
-              </button>
-              <button class="header-action-btn" title="备注" @click="startRemark(current)">
-                <span class="header-pencil">✎</span><span>备注</span>
-              </button>
-            </template>
-            <span v-if="chatType !== 'full_access' && chatType !== 'remark'" class="panel-header-info">
-              <template v-if="lastMsgId">msg_id: {{ lastMsgId.slice(0, 16) }}...</template>
-              <button class="refresh-msgid-btn" @click="refreshMsgId" title="刷新消息ID">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6" /><path d="M3 12a9 9 0 0 1 15-6.7L21 8" /><path d="M3 22v-6h6" /><path d="M21 12a9 9 0 0 1-15 6.7L3 16" /></svg>
-              </button>
-            </span>
-            <span v-if="groupRefreshError" class="group-refresh-error">{{ groupRefreshError }}</span>
-            <span v-else-if="groupActionMessage" class="group-action-message">{{ groupActionMessage }}</span>
+            <span>{{ page }} / {{ Math.ceil(total / PAGE) }}</span>
+            <button
+              class="icon-button"
+              :disabled="page >= Math.ceil(total / PAGE) || chatsLoading"
+              aria-label="下一页会话"
+              @click="changePage(1)"
+            >
+              <SvgIcon name="chevron-forward" :size="15" />
+            </button>
           </div>
-          <div class="history-body" ref="historyRef" @scroll="onHistoryScroll">
-            <div v-if="loadingOlder" class="history-hint loading-older"><span class="load-spinner"></span>正在加载历史消息...</div>
-            <div v-else-if="hasMore && current" class="history-hint"><button class="load-older-btn" @click="loadOlder">{{ olderBtnLabel }}</button></div>
-            <div v-else-if="!hasMore && history.length" class="history-hint">没有更多消息了</div>
-            <template v-for="m in history" :key="m.id">
-            <div v-if="m.event_type" class="event-wrap">
-              <div class="event-box">
-                <img v-if="m.appid && m.user_id" class="event-avatar" :src="avatarUrl(m.appid, m.user_id)" loading="lazy" @error="e => e.target.style.display='none'" />
-                <div v-else class="event-avatar-fallback">{{ (m.nickname || '?').charAt(0) }}</div>
-                <span class="event-uid">{{ m.user_id }}</span>
-                <span class="event-text">{{ m.event_type === 'member_add' ? '已加入本群' : '已退出本群' }}</span>
+          <span v-else class="list-footer-note">
+            <i />
+            {{ chatsIndexing ? '正在整理更早会话…' : wsConnected ? '自动更新' : '等待连接' }}
+          </span>
+        </footer>
+      </aside>
+
+      <section
+        class="chat-history-panel"
+        :class="{ 'mobile-hidden': isMobile && mobileView !== 'chat' }"
+        aria-label="聊天记录"
+      >
+        <template v-if="current">
+          <header class="conversation-header">
+            <button
+              v-if="isMobile"
+              class="icon-button mobile-back"
+              aria-label="返回会话列表"
+              @click="goBackToList"
+            >
+              <SvgIcon name="chevron-back" :size="22" />
+            </button>
+            <MessageAvatar
+              :src="chatAvatar(current)"
+              :name="chatDisplayName(current)"
+              :group="apiChatType === 'group'"
+              :size="28"
+            />
+            <div class="conversation-heading">
+              <h2 :title="chatDisplayName(current)">{{ chatDisplayName(current) }}</h2>
+              <div class="conversation-summary">
+                <span class="conversation-type">{{ apiChatType === 'group' ? '群聊' : '私聊' }}</span>
+                <span class="conversation-bot" :title="current.bot_name || app.currentBot?.name || '机器人'">
+                  {{ current.bot_name || app.currentBot?.name || '机器人' }}
+                </span>
+                <span v-if="apiChatType === 'group'" class="conversation-members" title="群成员人数">
+                  {{ currentGroupMembers }}
+                </span>
+                <span class="conversation-today">今日 {{ current.msg_count || 0 }} 条</span>
+                <GroupStatus
+                  v-if="apiChatType === 'group'"
+                  :full-access="!!current.is_full_access"
+                  :proactive="!!current.allow_proactive_msg"
+                />
+                <span v-if="current.in_group === false" class="left-badge">已退群</span>
               </div>
             </div>
-            <div v-else :class="['bubble-wrap', { self: m.is_self === true }]">
-              <div class="bubble-avatar-wrap">
-                <img v-if="m.is_self && m.bot_qq" class="msg-avatar" :src="qqAvatar(m.bot_qq)" loading="lazy" @error="e => e.target.style.display='none'" />
-                <div v-else-if="m.is_self" class="msg-avatar-bot">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="14" rx="3" /><circle cx="9" cy="11" r="1.5" fill="currentColor" /><circle cx="15" cy="11" r="1.5" fill="currentColor" /><path d="M12 2v2M6 20l2-2M18 20l-2-2" /></svg>
-                </div>
-                <img v-else-if="m.appid && m.user_id" class="msg-avatar" :src="avatarUrl(m.appid, m.user_id)" loading="lazy" @error="e => e.target.style.display='none'" />
-                <div v-else class="msg-avatar-fallback">{{ (m.nickname || '?').charAt(0) }}</div>
+            <div class="direction-tabs" aria-label="消息方向筛选">
+              <button
+                v-for="option in directionOptions"
+                :key="option.value"
+                :aria-pressed="messageDirection === option.value"
+                :class="{ active: messageDirection === option.value }"
+                @click="messageDirection = option.value"
+              >
+                {{ option.label }}
+              </button>
+            </div>
+            <div class="conversation-actions">
+              <button
+                class="icon-button"
+                :class="{ selected: searchVisible }"
+                aria-label="搜索已加载消息"
+                title="搜索消息"
+                :aria-expanded="searchVisible"
+                @click="toggleSearch"
+              >
+                <SvgIcon name="search" :size="19" />
+              </button>
+              <button
+                v-if="apiChatType === 'group'"
+                class="icon-button desktop-action"
+                :disabled="!!refreshingGroup || refreshingPage"
+                title="更新群信息"
+                aria-label="更新当前群信息"
+                @click="refreshGroupInfo"
+              >
+                <SvgIcon
+                  name="refresh"
+                  :size="18"
+                  :class="{ spinning: refreshingGroup === current.chat_id }"
+                />
+              </button>
+              <span class="header-divider" />
+              <button
+                class="icon-button"
+                :class="{ selected: detailsVisible }"
+                title="会话详情"
+                aria-label="会话详情"
+                :aria-expanded="detailsVisible"
+                @click="detailsVisible = !detailsVisible"
+              >
+                <SvgIcon name="information-circle" :size="20" />
+              </button>
+            </div>
+          </header>
+          <div
+            v-if="groupRefreshError || groupActionMessage"
+            class="conversation-notice"
+            :class="{ error: groupRefreshError }"
+            role="status"
+          >
+            <SvgIcon :name="groupRefreshError ? 'alert-circle' : 'check'" :size="14" />
+            {{ groupRefreshError || groupActionMessage }}
+            <button class="icon-button" aria-label="关闭提示" @click="dismissConversationNotice">
+              <SvgIcon name="x" :size="14" />
+            </button>
+          </div>
+          <div class="chat-workspace">
+            <div class="conversation">
+              <div v-if="searchVisible" class="message-search-row">
+                <SvgIcon name="search" :size="16" />
+                <input
+                  ref="searchRef"
+                  v-model="messageSearch"
+                  type="search"
+                  aria-label="搜索已加载消息内容"
+                  placeholder="搜索已加载消息的内容、昵称或 ID…"
+                  @keydown.esc="toggleSearch"
+                />
+                <button
+                  v-if="messageSearch"
+                  class="icon-button"
+                  aria-label="清除消息搜索"
+                  @click="messageSearch = ''"
+                >
+                  <SvgIcon name="x" :size="15" />
+                </button>
+                <span class="loaded-count">
+                  {{ isFiltering ? `匹配 ${visibleMessages.length} 条` : `已加载 ${history.length} 条消息` }}
+                </span>
               </div>
-              <div class="bubble-main">
-                <div class="bubble-name">
-                  {{ m.nickname }}
-                  <span v-if="m.source === 'web_panel'" class="bubble-src-tag">Web</span>
-                  <span v-else-if="m.source === 'onebot'" class="bubble-src-tag ob-tag">OneBot</span>
-                  <span v-if="roleLabel(m.user_id) && !m.is_self && apiChatType === 'group'" :class="['bubble-role-tag', roleClass(m.user_id)]">{{ roleLabel(m.user_id) }}</span>
-                  <span v-if="isBot(m.user_id) && !m.is_self && apiChatType === 'group'" class="bubble-role-tag role-bot">Bot</span>
-                  <span v-if="m.user_id && !m.is_self" class="bubble-uid">{{ m.user_id }}</span>
-                </div>
-                <div class="bubble-row">
-                  <div :class="['bubble', { 'bubble-self': m.is_self }]">
-                    <div v-if="m._quote" class="bubble-quote-ref">
-                      <div class="bubble-quote-author">引用 {{ m._quote.author || '消息' }}</div>
-                      <div class="bubble-quote-content">{{ quoteTargetText(m._quote) }}</div>
+              <div class="timeline-shell">
+                <div
+                  ref="historyRef"
+                  class="history-body"
+                  :aria-busy="historyLoading"
+                  @scroll="onHistoryScroll"
+                >
+                  <div class="history-inner">
+                    <div v-if="historyLoading" class="history-loading" role="status">
+                      <span class="load-spinner" />
+                      正在加载消息…
                     </div>
-                    <span v-if="m._recalled" class="recalled-tag">已撤回</span>
-                    <span v-else-if="m._audit_rejected" class="recalled-tag audit-reject">审核未通过</span>
-                    <span v-else-if="m.is_self && isAuditId(m.message_id)" class="audit-tag">审核中</span>
-                    <template v-if="m._media">
-                      <span v-if="m._media.text" class="bubble-media-text">{{ m._media.text }}</span>
-                      <template v-if="['图片','media'].includes(m._media.type)">
-                        <span v-if="isCostlyUrl(m._media.src)" class="bubble-media-placeholder" :data-src="m._media.src" @click="revealImg($event)">🖼 点击加载图片 (外部存储)</span>
-                        <img v-else :src="m._media.src" class="bubble-media-img" style="max-width:160px;max-height:120px;width:auto;height:auto" referrerpolicy="no-referrer" @click="previewImg(m._media.src)" @error="e => e.target.style.display='none'" loading="lazy" />
+                    <div v-else-if="historyError" class="history-error" role="alert">
+                      <SvgIcon name="alert-circle" :size="28" />
+                      <strong>{{ historyError }}</strong>
+                      <button class="secondary-button" @click="selectChat(current)">重新加载</button>
+                    </div>
+                    <template v-else>
+                      <div v-if="hasMore" class="history-start">
+                        <button :disabled="loadingOlder" class="load-older-button" @click="loadOlder">
+                          <span v-if="loadingOlder" class="load-spinner" />
+                          <SvgIcon v-else name="time" :size="13" />
+                          {{ loadingOlder ? '正在加载…' : olderBtnLabel }}
+                        </button>
+                        <span v-if="olderError" class="older-error" role="alert">
+                          {{ olderError }}，点击重试
+                        </span>
+                      </div>
+                      <div v-else-if="history.length" class="history-start">
+                        <span class="history-start-label">没有更早的消息了</span>
+                      </div>
+                      <template v-for="(message, index) in visibleMessages" :key="messageKey(message)">
+                        <div
+                          v-if="
+                            !index ||
+                            message.timestamp?.slice(0, 10) !==
+                              visibleMessages[index - 1].timestamp?.slice(0, 10)
+                          "
+                          class="date-divider"
+                        >
+                          <span>{{ dateLabel(message.timestamp) }}</span>
+                        </div>
+                        <div v-if="message.event_type" class="event-row">
+                          <SvgIcon
+                            :name="message.event_type === 'member_add' ? 'person-add' : 'person-remove'"
+                            :size="13"
+                          />
+                          <span>
+                            {{ message.nickname || message.user_id }}
+                            {{ message.event_type === 'member_add' ? '加入了群聊' : '退出了群聊' }}
+                          </span>
+                          <time>{{ shortTime(message.timestamp) }}</time>
+                        </div>
+                        <article
+                          v-else
+                          class="message-row"
+                          :class="{
+                            self: message.is_self,
+                            'message-recalled': message._recalled,
+                            'rich-message': /```|\|.*\|/.test(message.content || '')
+                          }"
+                        >
+                          <MessageAvatar
+                            class="timeline-avatar"
+                            :src="messageAvatar(message)"
+                            :name="message.nickname"
+                            :bot="message.is_self"
+                            :size="34"
+                          />
+                          <div class="message-main">
+                            <div class="message-meta">
+                              <span class="message-author" :title="message.user_id">
+                                {{ message.nickname || '未知用户' }}
+                              </span>
+                              <span
+                                v-if="message.is_self || isBot(message.user_id)"
+                                class="message-badge bot-badge"
+                              >BOT</span>
+                              <span
+                                v-if="
+                                  apiChatType === 'group' &&
+                                  (message.is_self ? botIsGroupAdmin : roleLabel(message.user_id))
+                                "
+                                class="message-badge"
+                                :class="message.is_self ? 'role-admin' : roleClass(message.user_id)"
+                              >
+                                {{ message.is_self ? '管理员' : roleLabel(message.user_id) }}
+                              </span>
+                              <span v-if="message.source" class="message-source">
+                                {{
+                                  message.source === 'web_panel'
+                                    ? 'Web 面板'
+                                    : message.source === 'onebot'
+                                      ? 'OneBot'
+                                      : message.source
+                                }}
+                              </span>
+                              <time :title="message.timestamp">{{ shortTime(message.timestamp) }}</time>
+                            </div>
+                            <div class="message-bubble">
+                              <div v-if="message._quote" class="bubble-quote-ref">
+                                <span>引用 {{ message._quote.author || '消息' }}</span>
+                                <p>{{ quoteTargetText(message._quote) }}</p>
+                              </div>
+                              <div
+                                v-if="
+                                  message._recalled ||
+                                  message._audit_rejected ||
+                                  (message.is_self && isAuditId(message.message_id))
+                                "
+                                class="message-delivery-state"
+                                :class="{ rejected: message._audit_rejected }"
+                              >
+                                <SvgIcon :name="message._recalled ? 'return' : 'time'" :size="12" />
+                                {{
+                                  message._recalled
+                                    ? '消息已撤回'
+                                    : message._audit_rejected
+                                      ? '审核未通过'
+                                      : '正在审核'
+                                }}
+                              </div>
+                              <template v-if="message._media">
+                                <MessageContent
+                                  v-if="message._media.text"
+                                  :content="message._media.text"
+                                  :mentions="mentionNicks"
+                                  @preview-image="previewImg"
+                                  @media-load="onMediaLoad"
+                                />
+                                <MessageContent
+                                  v-if="message._media.type === '图片'"
+                                  :content="`![消息图片](${message._media.src})`"
+                                  @preview-image="previewImg"
+                                  @media-load="onMediaLoad"
+                                />
+                                <audio
+                                  v-else-if="message._media.type === '语音'"
+                                  :src="message._media.src"
+                                  controls
+                                  preload="none"
+                                  class="message-audio"
+                                />
+                                <video
+                                  v-else-if="message._media.type === '视频'"
+                                  :src="message._media.src"
+                                  controls
+                                  preload="none"
+                                  class="message-video"
+                                  @loadedmetadata="onMediaLoad"
+                                />
+                                <a
+                                  v-else
+                                  class="message-file"
+                                  :href="message._media.src"
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                >
+                                  <span><SvgIcon name="file" :size="24" /></span>
+                                  <div>
+                                    <strong>
+                                      {{ message._media.src.split('/').pop()?.split('?')[0] || '附件' }}
+                                    </strong>
+                                    <small>
+                                      点击打开文件
+                                      <SvgIcon name="open-outline" :size="11" />
+                                    </small>
+                                  </div>
+                                </a>
+                              </template>
+                              <MessageContent
+                                v-else
+                                :content="message.content || ''"
+                                :mentions="mentionNicks"
+                                @preview-image="previewImg"
+                                @media-load="onMediaLoad"
+                              />
+                            </div>
+                            <div class="message-actions">
+                              <button
+                                v-if="canQuote(message)"
+                                title="引用回复"
+                                aria-label="引用这条消息"
+                                @click="quoteMsg(message)"
+                              >
+                                <SvgIcon name="return" :size="14" />
+                              </button>
+                              <button
+                                :title="copiedMessage === messageKey(message) ? '已复制' : '复制消息'"
+                                aria-label="复制消息"
+                                @click="copyMessage(message)"
+                              >
+                                <SvgIcon
+                                  :name="copiedMessage === messageKey(message) ? 'check' : 'copy'"
+                                  :size="13"
+                                />
+                              </button>
+                              <button
+                                title="原始数据"
+                                aria-label="查看原始数据"
+                                :class="{ active: rawDataMsg === message }"
+                                @click="showRaw(message)"
+                              >
+                                <SvgIcon name="code" :size="14" />
+                              </button>
+                              <button
+                                v-if="canMuteMember(message)"
+                                class="danger-action"
+                                title="禁言成员"
+                                aria-label="禁言该成员"
+                                @click="openMuteModal(message)"
+                              >
+                                <SvgIcon name="mute" :size="14" />
+                              </button>
+                              <button
+                                v-if="canRecall(message) && !message._recalled"
+                                class="danger-action"
+                                :disabled="recalling === message.message_id"
+                                :aria-busy="recalling === message.message_id"
+                                title="撤回消息"
+                                aria-label="撤回这条消息"
+                                @click="recallMsg(message)"
+                              >
+                                <SvgIcon name="recall" :size="14" />
+                              </button>
+                            </div>
+                            <div v-if="rawDataMsg === message" class="raw-data-box">
+                              <div>
+                                <span>原始消息数据</span>
+                                <button
+                                  class="icon-button"
+                                  aria-label="复制原始数据"
+                                  @click="copyValue(formatRaw(message))"
+                                >
+                                  <SvgIcon name="copy" :size="14" />
+                                </button>
+                                <button
+                                  class="icon-button"
+                                  aria-label="关闭原始数据"
+                                  @click="rawDataMsg = null"
+                                >
+                                  <SvgIcon name="x" :size="14" />
+                                </button>
+                              </div>
+                              <p v-if="message._rawLoading" role="status">正在加载原始数据…</p>
+                              <p v-else-if="message._rawError" role="alert">{{ message._rawError }}</p>
+                              <pre v-else>{{ formatRaw(message) }}</pre>
+                            </div>
+                          </div>
+                        </article>
                       </template>
-                      <audio v-else-if="m._media.type === '语音'" :src="m._media.src" controls preload="none" class="bubble-media-audio" />
-                      <video v-else-if="m._media.type === '视频'" :src="m._media.src" controls preload="none" class="bubble-media-video" />
-                      <a v-else :href="m._media.src" target="_blank" class="bubble-media-link"> 📁 {{ m._media.src.split('/').pop() }}</a>
+                      <div v-if="!visibleMessages.length" class="timeline-empty">
+                        <span><SvgIcon :name="isFiltering ? 'search' : 'chat-group'" :size="28" /></span>
+                        <h3>{{ isFiltering ? '没有找到匹配的消息' : '还没有消息记录' }}</h3>
+                        <p>
+                          {{
+                            isFiltering
+                              ? '试试其他关键词，或切换消息筛选条件'
+                              : '从下方发送第一条消息，开始这段对话'
+                          }}
+                        </p>
+                        <button v-if="isFiltering" class="text-button" @click="resetMessageFilters">
+                          重置筛选
+                        </button>
+                      </div>
                     </template>
-                    <div v-else v-html="m._html" style="word-break:break-all;overflow-wrap:anywhere;white-space:pre-wrap" @click="onBubbleClick" />
-                  </div>
-                  <div class="bubble-actions">
-                    <button v-if="canMuteMember(m)" class="action-btn mute" title="禁言该成员" aria-label="禁言该成员" @click="openMuteModal(m)">
-                      <svg class="action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="m22 9-6 6"/><path d="m16 9 6 6"/></svg>
-                    </button>
-                    <button v-if="canQuote(m)" class="action-btn" title="引用这条消息" aria-label="引用这条消息" @click="quoteMsg(m)">
-                      <svg class="action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></svg>
-                    </button>
-                    <button class="action-btn" title="原始数据" @click="showRaw(m)">{ }</button>
-                    <button v-if="canRecall(m) && !m._recalled" class="action-btn recall" :disabled="recalling === m.message_id" title="撤回" @click="recallMsg(m)">
-                      {{ recalling === m.message_id ? '...' : '↩' }}
-                    </button>
                   </div>
                 </div>
-                <span class="bubble-ts">{{ stripYear(m.timestamp) }}</span>
-                <pre v-if="rawDataMsg === m" class="raw-data-box">{{ formatRaw(m) }}</pre>
+                <button v-if="!stickToBottom && history.length" class="jump-to-latest" @click="scrollBottom">
+                  <SvgIcon name="arrow-down" :size="14" />
+                  {{ newMessageCount ? `${newMessageCount} 条新消息` : '回到最新' }}
+                </button>
               </div>
-            </div>
-            </template>
-            <div v-if="!history.length" class="chat-empty" style="padding-top:48px">暂无消息记录，可在下方发送消息</div>
-          </div>
 
-          <!-- 发送区域 -->
-          <div class="send-area">
-            <div v-if="quotedMsg" class="quote-preview">
-              <div class="quote-main">
-                <span class="quote-title">引用 {{ quoteAuthor(quotedMsg) }}</span>
-                <span class="quote-text">{{ quotedPreview }}</span>
+              <form class="send-area" @submit.prevent="sendMsg">
+                <div v-if="quotedMsg" class="quote-preview">
+                  <SvgIcon name="return" :size="16" />
+                  <div>
+                    <strong>回复 {{ quoteAuthor(quotedMsg) }}</strong>
+                    <span>{{ quotedPreview }}</span>
+                  </div>
+                  <button
+                    type="button"
+                    class="icon-button"
+                    title="取消引用"
+                    aria-label="取消引用"
+                    @click="clearQuote"
+                  >
+                    <SvgIcon name="x" :size="16" />
+                  </button>
+                </div>
+                <div class="composer-card" :class="{ 'preview-mode': showPreview }">
+                  <div class="composer-header">
+                    <div class="msg-type-tabs" aria-label="消息类型">
+                      <button
+                        v-for="option in msgTypeOptions"
+                        :key="option.value"
+                        type="button"
+                        :disabled="sending"
+                        :aria-pressed="msgType === option.value"
+                        :class="{ active: msgType === option.value }"
+                        @click="selectMsgType(option.value)"
+                      >
+                        {{ option.label }}
+                      </button>
+                    </div>
+                    <div class="composer-header-actions">
+                      <button
+                        v-if="msgType === 'markdown'"
+                        class="preview-toggle"
+                        :class="{ active: showPreview }"
+                        type="button"
+                        :aria-pressed="showPreview"
+                        @click="showPreview = !showPreview"
+                      >
+                        <SvgIcon :name="showPreview ? 'edit' : 'eye'" :size="14" />
+                        <span>{{ showPreview ? '编辑' : '预览' }}</span>
+                      </button>
+                      <button
+                        type="button"
+                        class="icon-button composer-settings"
+                        :class="{ selected: sendOptionsOpen }"
+                        title="发送设置"
+                        aria-label="发送设置"
+                        :aria-expanded="sendOptionsOpen"
+                        @click="sendOptionsOpen = !sendOptionsOpen"
+                      >
+                        <SvgIcon name="settings" :size="16" />
+                      </button>
+                    </div>
+                  </div>
+                  <div v-if="sendOptionsOpen || isCustomSendMode" class="send-options">
+                    <label>
+                      <span>发送方式</span>
+                      <select v-model="sendMode" :disabled="sending" aria-label="发送方式">
+                        <option v-for="option in sendModeOptions" :key="option.value" :value="option.value">
+                          {{ option.label }}
+                        </option>
+                      </select>
+                    </label>
+                    <input
+                      v-if="isCustomSendMode"
+                      v-model="customSendId"
+                      :disabled="sending"
+                      :aria-label="sendMode === 'custom_event_id' ? '自定义事件 ID' : '自定义 msg_id'"
+                      :placeholder="sendMode === 'custom_event_id' ? '输入事件 ID' : '输入 msg_id'"
+                    />
+                  </div>
+                  <div v-if="msgType === 'ark' || msgType === 'card'" class="structured-editor">
+                    <label v-if="msgType === 'ark'" class="template-select">
+                      <span>ARK 模板</span>
+                      <select v-model="arkTpl" :disabled="sending" aria-label="ARK 模板">
+                        <option value="23">23 · 链接卡片</option>
+                        <option value="24">24 · 文本卡片</option>
+                        <option value="37">37 · 大图卡片</option>
+                      </select>
+                    </label>
+                    <div v-if="msgType === 'card'" class="ark-grid">
+                      <label
+                        v-for="field in [
+                          { key: 'title', label: '标题' },
+                          { key: 'description', label: '描述' },
+                          { key: 'pic_url', label: '图片 URL' },
+                          { key: 'url', label: '跳转 URL' }
+                        ]"
+                        :key="field.key"
+                        class="ark-field"
+                      >
+                        <span>{{ field.label }}</span>
+                        <input
+                          v-model="cardFields[field.key]"
+                          :disabled="sending"
+                          :placeholder="`输入${field.label}`"
+                        />
+                      </label>
+                    </div>
+                    <div v-else class="ark-grid">
+                      <label v-for="field in arkFieldOptions" :key="field.key" class="ark-field">
+                        <span>
+                          {{ field.label }}
+                          <small>{{ field.key }}</small>
+                        </span>
+                        <input
+                          v-model="arkFields[field.key]"
+                          :disabled="sending"
+                          :placeholder="`输入${field.label}`"
+                        />
+                      </label>
+                    </div>
+                    <label v-if="msgType === 'ark' && arkTpl === '23'" class="ark-list-field">
+                      <span>
+                        链接列表
+                        <small>每行一条：文字 | 链接 URL</small>
+                      </span>
+                      <textarea
+                        v-model="arkList"
+                        :disabled="sending"
+                        rows="2"
+                        placeholder="查看详情 | https://example.com"
+                      />
+                    </label>
+                  </div>
+                  <template v-else>
+                    <div v-if="showPreview && msgType === 'markdown'" class="composer-preview">
+                      <MessageContent
+                        v-if="msgText.trim()"
+                        :content="msgText"
+                        :mentions="mentionNicks"
+                        @preview-image="previewImg"
+                      />
+                      <div v-else class="preview-empty">
+                        <SvgIcon name="eye" :size="20" />
+                        <span>输入内容后，在这里查看排版效果</span>
+                      </div>
+                    </div>
+                    <textarea
+                      v-else
+                      ref="editorRef"
+                      v-model="msgText"
+                      class="message-editor"
+                      :disabled="sending"
+                      :aria-label="
+                        msgType === 'markdown'
+                          ? 'Markdown 消息内容'
+                          : msgType === 'media'
+                            ? '媒体资源 URL'
+                            : '文本消息内容'
+                      "
+                      :placeholder="placeholder"
+                      rows="1"
+                      @keydown="onKeydown"
+                    />
+                  </template>
+                  <div v-if="imgFile || mediaFile" class="attachment-row">
+                    <div v-if="imgFile" class="attachment-chip">
+                      <img v-if="imgPreview" :src="imgPreview" alt="待发送的图片" />
+                      <span>{{ imgFile.name }}</span>
+                      <button type="button" class="icon-button" aria-label="移除待发送图片" @click="clearImg">
+                        <SvgIcon name="x" :size="14" />
+                      </button>
+                    </div>
+                    <div v-if="mediaFile" class="attachment-chip">
+                      <SvgIcon name="file" :size="17" />
+                      <span>{{ mediaFile.name }}</span>
+                      <button
+                        type="button"
+                        class="icon-button"
+                        aria-label="移除待发送文件"
+                        @click="clearMediaFile"
+                      >
+                        <SvgIcon name="x" :size="14" />
+                      </button>
+                    </div>
+                  </div>
+                  <footer class="composer-footer">
+                    <div class="composer-footer-left">
+                      <div
+                        v-if="msgType === 'markdown' && !showPreview"
+                        class="format-toolbar"
+                        aria-label="Markdown 格式工具"
+                      >
+                        <button
+                          v-for="tool in markdownTools"
+                          :key="tool.label"
+                          type="button"
+                          :title="tool.label"
+                          :aria-label="tool.label"
+                          :disabled="sending"
+                          :class="tool.class"
+                          @mousedown.prevent
+                          @click="insertMarkdown(tool)"
+                        >
+                          <SvgIcon v-if="tool.icon" :name="tool.icon" :size="15" />
+                          <span v-else>{{ tool.symbol }}</span>
+                        </button>
+                      </div>
+                      <label
+                        v-if="msgType === 'text' || msgType === 'media'"
+                        class="upload-button"
+                        :title="msgType === 'text' ? '添加图片' : '上传媒体文件'"
+                      >
+                        <input
+                          type="file"
+                          :disabled="sending"
+                          :accept="msgType === 'text' ? 'image/*' : mediaAccept"
+                          :aria-label="msgType === 'text' ? '添加图片' : '上传媒体文件'"
+                          @change="msgType === 'text' ? onImgSelect($event) : onMediaSelect($event)"
+                        />
+                        <SvgIcon :name="msgType === 'text' ? 'image' : 'upload'" :size="17" />
+                        <span>{{ msgType === 'text' ? '添加图片' : '上传文件' }}</span>
+                      </label>
+                      <select
+                        v-if="msgType === 'media'"
+                        v-model="mediaFileType"
+                        :disabled="sending"
+                        class="media-type-select"
+                        aria-label="媒体类型"
+                      >
+                        <option v-for="option in mediaTypeOptions" :key="option.value" :value="option.value">
+                          {{ option.label }}
+                        </option>
+                      </select>
+                      <span
+                        v-if="msgText.length && msgType !== 'ark' && msgType !== 'card'"
+                        class="character-count"
+                      >
+                        {{ msgText.length }} 字
+                      </span>
+                    </div>
+                    <div class="composer-footer-right">
+                      <span class="keyboard-hint">
+                        <kbd>Enter</kbd>
+                        发送
+                        <span>·</span>
+                        <kbd>Shift + Enter</kbd>
+                        换行
+                      </span>
+                      <button type="submit" class="send-button" :disabled="!canSend">
+                        <span v-if="sending" class="load-spinner" />
+                        <SvgIcon v-else name="send" :size="15" />
+                        <span>{{ sending ? '发送中' : '发送' }}</span>
+                      </button>
+                    </div>
+                  </footer>
+                </div>
+                <div v-if="sendErr" class="send-error" role="alert">
+                  <SvgIcon name="alert-circle" :size="14" />
+                  <span>{{ sendErr }}</span>
+                  <button
+                    type="button"
+                    class="icon-button"
+                    aria-label="关闭发送错误提示"
+                    @click="sendErr = ''"
+                  >
+                    <SvgIcon name="x" :size="14" />
+                  </button>
+                </div>
+              </form>
+            </div>
+            <aside v-if="detailsVisible" class="conversation-details" aria-label="会话详情">
+              <header>
+                <h3>会话详情</h3>
+                <button class="icon-button" aria-label="关闭会话详情" @click="detailsVisible = false">
+                  <SvgIcon name="x" :size="17" />
+                </button>
+              </header>
+              <div class="details-profile">
+                <MessageAvatar
+                  :src="chatAvatar(current)"
+                  :name="chatDisplayName(current)"
+                  :group="apiChatType === 'group'"
+                  :size="60"
+                />
+                <strong>{{ chatDisplayName(current) }}</strong>
+                <span>{{ apiChatType === 'group' ? '群聊会话' : '私聊会话' }}</span>
               </div>
-              <button class="quote-clear" title="取消引用" @click="clearQuote">×</button>
-            </div>
-            <div class="send-toolbar">
-              <div class="msg-type-btns">
-                <button v-for="opt in msgTypeOptions" :key="opt.value" type="button" class="msg-type-btn" :class="{ active: msgType === opt.value }" @click="selectMsgType(opt.value)">{{ opt.label }}</button>
+              <dl>
+                <div>
+                  <dt>
+                    会话 ID
+                    <button class="icon-button" aria-label="复制会话 ID" @click="copyValue(current.chat_id)">
+                      <SvgIcon name="copy" :size="13" />
+                    </button>
+                  </dt>
+                  <dd>{{ current.chat_id }}</dd>
+                </div>
+                <div>
+                  <dt>所属机器人</dt>
+                  <dd>{{ current.bot_name || app.currentBot?.name || current.appid || '全部机器人' }}</dd>
+                </div>
+                <div v-if="current.appid">
+                  <dt>AppID</dt>
+                  <dd>{{ current.appid }}</dd>
+                </div>
+                <div v-if="apiChatType === 'group'">
+                  <dt>群成员人数</dt>
+                  <dd>{{ currentGroupMembers }}</dd>
+                </div>
+                <div v-if="apiChatType === 'group'">
+                  <dt>主动消息</dt>
+                  <dd>{{ current.allow_proactive_msg ? '已开启' : '未开启' }}</dd>
+                </div>
+                <div v-if="apiChatType === 'group'">
+                  <dt>机器人身份</dt>
+                  <dd>{{ botIsGroupAdmin ? '管理员' : '群成员' }}</dd>
+                </div>
+                <div v-if="apiChatType === 'group'">
+                  <dt>接入状态</dt>
+                  <dd>
+                    <span class="details-status" :class="{ inactive: current.in_group === false }">
+                      <i />
+                      {{
+                        current.in_group === false
+                          ? '已退群'
+                          : current.is_full_access
+                            ? '全量接入'
+                            : '标准接入'
+                      }}
+                    </span>
+                  </dd>
+                </div>
+                <div>
+                  <dt>
+                    最近消息 ID
+                    <button class="icon-button" aria-label="刷新消息 ID" @click="refreshMsgId">
+                      <SvgIcon name="refresh" :size="13" />
+                    </button>
+                  </dt>
+                  <dd>{{ lastMsgId || '暂无可用的消息 ID' }}</dd>
+                </div>
+              </dl>
+              <div v-if="apiChatType === 'group'" class="details-actions">
+                <button class="secondary-button" @click="startRemark(current)">
+                  <SvgIcon name="edit" :size="15" />
+                  编辑群备注
+                </button>
+                <button
+                  class="secondary-button"
+                  :disabled="!!refreshingGroup || refreshingPage"
+                  @click="refreshGroupInfo"
+                >
+                  <SvgIcon
+                    name="refresh"
+                    :size="15"
+                    :class="{ spinning: refreshingGroup === current.chat_id }"
+                  />
+                  更新群信息
+                </button>
               </div>
-              <select v-model="sendMode" class="send-type-select send-mode-select" title="发送方式"><option v-for="opt in sendModeOptions" :key="opt.value" :value="opt.value">{{ isMobile ? sendModeShortLabels[opt.value] : opt.label }}</option></select>
-              <select v-if="msgType === 'media'" v-model="mediaFileType" class="send-type-select"><option value="1">图片</option><option value="2">视频</option><option value="3">语音</option><option value="4">文件</option></select>
-              <label v-if="msgType === 'media'" class="send-img-label" title="上传文件">
-                <input type="file" :accept="mediaAccept" @change="onMediaSelect" hidden />
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="send-icon"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
-              </label>
-              <span v-if="mediaFile" class="send-img-tag">
-                {{ mediaFile.name }}
-                <span class="send-img-remove" @click="clearMediaFile">×</span>
-              </span>
-              <label v-if="msgType === 'text'" class="send-img-label" title="选择图片">
-                <input type="file" accept="image/*" @change="onImgSelect" hidden />
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="send-icon"><rect x="3" y="3" width="18" height="18" rx="3" /><circle cx="8.5" cy="8.5" r="1.5" fill="currentColor" /><path d="M21 15l-5-5L5 21" /></svg>
-              </label>
-              <span v-if="imgFile" class="send-img-tag">
-                <img v-if="imgPreview" :src="imgPreview" class="send-img-preview" /> {{ imgFile.name }}
-                <span class="send-img-remove" @click="clearImg">×</span>
-              </span>
-              <select v-if="msgType === 'ark'" v-model="arkTpl" class="send-type-select"><option value="23">23 - 链接卡片</option><option value="24">24 - 文本卡片</option><option value="37">37 - 大图卡片</option></select>
-            </div>
-
-            <!-- 卡片表单 -->
-            <div v-if="msgType === 'card'" class="ark-form">
-              <div class="ark-grid">
-                <div class="ark-field"><label>标题</label><input v-model="cardFields.title" placeholder="标题" /></div>
-                <div class="ark-field"><label>描述</label><input v-model="cardFields.description" placeholder="描述" /></div>
-                <div class="ark-field"><label>图片URL</label><input v-model="cardFields.pic_url" placeholder="图片URL" /></div>
-                <div class="ark-field"><label>跳转URL</label><input v-model="cardFields.url" placeholder="跳转URL" /></div>
-              </div>
-              <button class="send-btn ark-send-btn" @click="sendMsg" :disabled="sending">{{ sending ? '...' : '发送卡片' }}</button>
-            </div>
-
-            <!-- ARK 表单 -->
-            <div v-if="msgType === 'ark'" class="ark-form">
-              <div class="ark-grid">
-                <template v-if="arkTpl === '24'">
-                  <div class="ark-field"><label>#DESC#</label><input v-model="arkFields['#DESC#']" placeholder="描述" /></div>
-                  <div class="ark-field"><label>#PROMPT#</label><input v-model="arkFields['#PROMPT#']" placeholder="提示" /></div>
-                  <div class="ark-field"><label>#TITLE#</label><input v-model="arkFields['#TITLE#']" placeholder="标题" /></div>
-                  <div class="ark-field"><label>#METADESC#</label><input v-model="arkFields['#METADESC#']" placeholder="详情" /></div>
-                  <div class="ark-field"><label>#IMG#</label><input v-model="arkFields['#IMG#']" placeholder="图片URL" /></div>
-                  <div class="ark-field"><label>#LINK#</label><input v-model="arkFields['#LINK#']" placeholder="跳转URL" /></div>
-                  <div class="ark-field"><label>#SUBTITLE#</label><input v-model="arkFields['#SUBTITLE#']" placeholder="副标题" /></div>
-                </template>
-                <template v-else-if="arkTpl === '37'">
-                  <div class="ark-field"><label>#PROMPT#</label><input v-model="arkFields['#PROMPT#']" placeholder="提示" /></div>
-                  <div class="ark-field"><label>#METATITLE#</label><input v-model="arkFields['#METATITLE#']" placeholder="标题" /></div>
-                  <div class="ark-field"><label>#METASUBTITLE#</label><input v-model="arkFields['#METASUBTITLE#']" placeholder="副标题" /></div>
-                  <div class="ark-field"><label>#METACOVER#</label><input v-model="arkFields['#METACOVER#']" placeholder="封面URL" /></div>
-                  <div class="ark-field"><label>#METAURL#</label><input v-model="arkFields['#METAURL#']" placeholder="跳转URL" /></div>
-                </template>
-                <template v-else>
-                  <div class="ark-field"><label>#DESC#</label><input v-model="arkFields['#DESC#']" placeholder="描述" /></div>
-                  <div class="ark-field"><label>#PROMPT#</label><input v-model="arkFields['#PROMPT#']" placeholder="提示" /></div>
-                </template>
-              </div>
-              <template v-if="arkTpl === '23'">
-                <div class="ark-hint">链接列表 (每行一条: 文字|链接URL)</div>
-                <textarea v-model="arkList" class="send-input" rows="2" placeholder="描述1|https://example.com&#10;描述2|https://example.com" />
-              </template>
-              <button class="send-btn ark-send-btn" @click="sendMsg" :disabled="sending">{{ sending ? '...' : '发送 ARK' }}</button>
-            </div>
-
-            <div v-if="isCustomSendMode" class="send-custom-id-row">
-              <input v-model="customSendId" class="send-custom-id" :placeholder="sendMode === 'custom_event_id' ? '输入事件 ID' : '输入 msg_id'" />
-            </div>
-
-            <!-- 普通消息发送 -->
-            <div v-if="msgType !== 'ark' && msgType !== 'card'" class="send-input-row">
-              <textarea v-model="msgText" class="send-input" rows="2" :placeholder="placeholder" @keydown="onKeydown" />
-              <button class="send-btn" @click="sendMsg" :disabled="sending">{{ sending ? '...' : '发送' }}</button>
-            </div>
-            <div v-if="msgType === 'media'" class="send-hint"> 输入资源 URL 或点击上传文件, 将以富媒体消息 ({{ { '1':'图片','2':'视频','3':'语音','4':'文件' }[mediaFileType] }}) 发送 </div>
-            <div v-if="sendErr" class="send-error">{{ sendErr }}</div>
+              <p class="details-note">会话中的新消息会自动同步。更早的记录可从时间线顶部加载。</p>
+            </aside>
           </div>
         </template>
-
         <div v-else class="no-chat">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="width:48px;height:48px;color:var(--text3);margin-bottom:12px"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" /></svg>
-          <div>选择一个聊天查看消息</div>
-        </div>
-      </div>
-    </div>
-    <div v-if="lightboxSrc" class="lightbox-overlay" @click="closeLightbox">
-      <img :src="lightboxSrc" class="lightbox-img" referrerpolicy="no-referrer" @click.stop />
-      <span class="lightbox-close" @click="closeLightbox">&times;</span>
-    </div>
-
-    <n-modal v-model:show="remarkModalVisible" preset="dialog" title="群备注" positive-text="保存" negative-text="取消" @positive-click="setRemark" @negative-click="cancelRemark" style="width:380px">
-      <div style="padding:8px 0">
-        <div style="margin-bottom:8px;font-size:13px;color:var(--text2)">群 OpenID: {{ remarkEditing }}</div>
-        <n-input v-model:value="remarkInput" placeholder="备注名称（留空则清除备注）" style="margin-bottom:8px" />
-        <n-input v-model:value="remarkQqInput" placeholder="群号（可选，填写后显示群头像）" @keydown.enter="setRemark(); remarkModalVisible = false" />
-      </div>
-    </n-modal>
-
-    <n-modal v-model:show="addRemarkModalVisible" preset="dialog" title="添加群备注" positive-text="保存" negative-text="取消" @positive-click="submitAddRemark" @negative-click="cancelAddRemark" style="width:380px">
-      <div style="padding:8px 0">
-        <n-input v-model:value="addRemarkOpenid" placeholder="群 OpenID" style="margin-bottom:8px" autofocus />
-        <n-input v-model:value="addRemarkName" placeholder="备注名称" style="margin-bottom:8px" />
-        <n-input v-model:value="addRemarkQq" placeholder="群号（可选，填写后显示群头像）" @keydown.enter="submitAddRemark(); addRemarkModalVisible = false" />
-      </div>
-    </n-modal>
-
-    <n-modal v-model:show="muteModalVisible" preset="card" title="群成员禁言" :mask-closable="!muting" style="width:min(420px, calc(100vw - 32px))" @close="closeMuteModal">
-      <div v-if="muteTarget" class="mute-dialog">
-        <div class="mute-member">
-          <img v-if="muteTarget.appid && muteTarget.user_id" :src="avatarUrl(muteTarget.appid, muteTarget.user_id)" class="mute-avatar" @error="e => e.target.style.display='none'" />
-          <div>
-            <div class="mute-name">{{ muteTarget.nickname || '未知用户' }}</div>
-            <div class="mute-openid">{{ muteTarget.user_id }}</div>
+          <div class="empty-illustration" aria-hidden="true">
+            <span class="illustration-dot dot-one" />
+            <span class="illustration-dot dot-two" />
+            <div class="illustration-card back">
+              <i />
+              <i />
+            </div>
+            <div class="illustration-card front">
+              <span class="illustration-avatar"><SvgIcon name="chat-group" :size="26" /></span>
+              <div>
+                <i />
+                <i />
+              </div>
+              <span class="illustration-check"><SvgIcon name="check" :size="13" /></span>
+            </div>
+          </div>
+          <span class="empty-eyebrow">每一条消息，都清晰可见</span>
+          <h2>选择一个会话，开始查看</h2>
+          <p>
+            在左侧查找群聊或私聊
+            <br />
+            消息记录、实时回复与 Markdown 预览，尽在这里
+          </p>
+          <div class="empty-features">
+            <span>
+              <SvgIcon name="time" :size="14" />
+              实时消息
+            </span>
+            <span>
+              <SvgIcon name="code" :size="14" />
+              Markdown
+            </span>
+            <span>
+              <SvgIcon name="image" :size="14" />
+              多媒体
+            </span>
           </div>
         </div>
-        <div class="mute-label">禁言时长</div>
-        <div class="mute-presets">
-          <button v-for="item in [{ label: '10 分钟', value: 10 }, { label: '30 分钟', value: 30 }, { label: '1 小时', value: 60 }, { label: '1 天', value: 1440 }]" :key="item.value" :class="['mute-preset', { active: muteMinutes === item.value }]" @click="muteMinutes = item.value">{{ item.label }}</button>
+      </section>
+    </div>
+
+    <Teleport to="body">
+      <div
+        v-if="lightboxSrc"
+        class="message-lightbox"
+        role="dialog"
+        aria-modal="true"
+        aria-label="图片预览"
+        @click="closeLightbox"
+        @keydown.tab.prevent="lightboxCloseRef?.focus()"
+      >
+        <button
+          ref="lightboxCloseRef"
+          class="lightbox-close"
+          aria-label="关闭图片预览"
+          @click.stop="closeLightbox"
+        >
+          <SvgIcon name="x" :size="24" />
+        </button>
+        <img :src="lightboxSrc" alt="消息图片预览" referrerpolicy="no-referrer" @click.stop />
+        <span>点击空白处或按 Esc 关闭</span>
+      </div>
+    </Teleport>
+
+    <n-modal
+      v-model:show="remarkModalVisible"
+      preset="dialog"
+      title="编辑群备注"
+      positive-text="保存备注"
+      negative-text="取消"
+      :positive-button-props="{ loading: remarkSaving }"
+      @positive-click="setRemark"
+      @negative-click="cancelRemark"
+      style="width: min(400px, calc(100vw - 32px))"
+    >
+      <div class="remark-form">
+        <p v-if="remarkError" class="remark-error" role="alert">{{ remarkError }}</p>
+        <p>群 OpenID：{{ remarkEditing }}</p>
+        <label>
+          备注名称
+          <n-input v-model:value="remarkInput" placeholder="输入备注，留空可清除" />
+        </label>
+        <label>
+          群号
+          <n-input
+            v-model:value="remarkQqInput"
+            placeholder="选填，用于显示群头像"
+            @keydown.enter="setRemark"
+          />
+        </label>
+      </div>
+    </n-modal>
+    <n-modal
+      v-model:show="addRemarkModalVisible"
+      preset="dialog"
+      title="添加群备注"
+      positive-text="添加备注"
+      negative-text="取消"
+      :positive-button-props="{ loading: remarkSaving }"
+      @positive-click="submitAddRemark"
+      @negative-click="cancelAddRemark"
+      style="width: min(400px, calc(100vw - 32px))"
+    >
+      <div class="remark-form">
+        <p v-if="remarkError" class="remark-error" role="alert">{{ remarkError }}</p>
+        <label>
+          群 OpenID
+          <n-input v-model:value="addRemarkOpenid" placeholder="输入群 OpenID" autofocus />
+        </label>
+        <label>
+          备注名称
+          <n-input v-model:value="addRemarkName" placeholder="为群聊取一个容易识别的名称" />
+        </label>
+        <label>
+          群号
+          <n-input
+            v-model:value="addRemarkQq"
+            placeholder="选填，用于显示群头像"
+            @keydown.enter="submitAddRemark"
+          />
+        </label>
+      </div>
+    </n-modal>
+    <n-modal
+      v-model:show="muteModalVisible"
+      preset="card"
+      title="群成员禁言"
+      :mask-closable="!muting"
+      style="width: min(420px, calc(100vw - 32px))"
+      @close="closeMuteModal"
+    >
+      <div v-if="muteTarget" class="mute-dialog">
+        <div class="mute-member">
+          <MessageAvatar :src="messageAvatar(muteTarget)" :name="muteTarget.nickname" :size="44" />
+          <div>
+            <strong>{{ muteTarget.nickname || '未知用户' }}</strong>
+            <span>{{ muteTarget.user_id }}</span>
+          </div>
         </div>
-        <label class="mute-custom"><span>自定义分钟</span><input v-model.number="muteMinutes" type="number" min="1" max="43200" /></label>
-        <div v-if="muteError" class="mute-error">{{ muteError }}</div>
+        <label class="mute-label">禁言时长</label>
+        <div class="mute-presets">
+          <button
+            v-for="item in [
+              { label: '10 分钟', value: 10 },
+              { label: '30 分钟', value: 30 },
+              { label: '1 小时', value: 60 },
+              { label: '1 天', value: 1440 }
+            ]"
+            :key="item.value"
+            :class="{ active: muteMinutes === item.value }"
+            @click="muteMinutes = item.value"
+          >
+            {{ item.label }}
+          </button>
+        </div>
+        <label class="mute-custom">
+          <span>自定义分钟</span>
+          <input v-model.number="muteMinutes" type="number" min="1" max="43200" />
+        </label>
+        <div v-if="muteError" class="send-error" role="alert">{{ muteError }}</div>
         <div class="mute-actions">
-          <button class="mute-btn ghost" :disabled="muting" @click="closeMuteModal">取消</button>
-          <button class="mute-btn primary" :disabled="muting || muteMinutes < 1 || muteMinutes > 43200" @click="submitMute">{{ muting ? '处理中...' : '确认禁言' }}</button>
+          <button class="secondary-button" :disabled="muting" @click="closeMuteModal">取消</button>
+          <button
+            class="send-button"
+            :disabled="muting || !Number.isFinite(muteMinutes) || muteMinutes < 1 || muteMinutes > 43200"
+            @click="submitMute"
+          >
+            {{ muting ? '处理中…' : '确认禁言' }}
+          </button>
         </div>
       </div>
     </n-modal>
-  </div>
+  </section>
 </template>
 
-<style scoped>
-.msg-page {
-  height:calc(100vh - 100px);
-  display:flex;
-  flex-direction:column
-}
-.msg-title {
-  color:var(--text);
-  font-size:18px;
-  font-weight:700;
-  margin:0 0 12px
-}
-.msg-layout {
-  flex:1;
-  display:flex;
-  gap:12px;
-  min-height:0
-}
-.chat-list-panel {
-  width:240px;
-  flex-shrink:0;
-  background:var(--bg2);
-  border:1px solid var(--border);
-  border-radius:var(--radius);
-  box-shadow:var(--shadow-sm);
-  display:flex;
-  flex-direction:column;
-  overflow:hidden
-}
-.panel-header {
-  padding:10px 14px;
-  border-bottom:1px solid var(--border);
-  display:flex;
-  align-items:center;
-  flex-wrap:wrap;
-  gap:6px;
-  color:var(--text);
-  font-size:14px;
-  font-weight:600
-}
-.panel-header > span:first-child { margin-right:0 }
-.panel-tool-btn {
-  background:none;
-  border:1px solid var(--border);
-  cursor:pointer;
-  color:var(--text2);
-  height:22px;
-  border-radius:4px;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  transition:color .15s,background .15s;
-  line-height:1;
-  padding:0 5px
-}
-.panel-tool-btn:hover:not(:disabled) {
-  color:var(--accent);
-  background:var(--bg-float)
-}
-.panel-tool-btn:disabled {
-  opacity:.4;
-  cursor:default
-}
-.panel-add-btn {
-  font-size:12px;
-  font-weight:600
-}
-.panel-refresh-btn {
-  width:22px;
-  padding:0;
-  margin-right:auto
-}
-.chat-search {
-  margin:8px 10px
-}
-.chat-items {
-  flex:1;
-  overflow-y:auto
-}
-.chat-item {
-  display:flex;
-  align-items:center;
-  gap:10px;
-  padding:10px 14px;
-  height:56px;
-  box-sizing:border-box;
-  cursor:pointer;
-  transition:background .12s
-}
-.chat-item:hover {
-  background:var(--bg3)
-}
-.chat-item.active {
-  background:var(--accent-soft);
-  border-left:3px solid var(--accent);
-  padding-left:11px
-}
-.chat-item.active .chat-nick {
-  color:var(--accent);
-  font-weight:600
-}
-.chat-item.active:hover {
-  background:var(--accent-soft)
-}
-.chat-avatar-wrap {
-  position:relative;
-  flex-shrink:0;
-  width:36px;
-  height:36px
-}
-.chat-avatar {
-  width:36px;
-  height:36px;
-  border-radius:50%;
-  -o-object-fit:cover;
-  object-fit:cover
-}
-.chat-avatar-fallback {
-  width:36px;
-  height:36px;
-  border-radius:50%;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  background:linear-gradient(135deg,var(--accent),var(--accent-light));
-  color:#fff;
-  font-weight:700;
-  font-size:14px
-}
-.chat-avatar-badge {
-  position:absolute;
-  bottom:-2px;
-  right:-2px;
-  width:16px;
-  height:16px;
-  border-radius:50%;
-  background:#52c41a;
-  color:#fff;
-  font-size:9px;
-  font-weight:700;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  border:2px solid var(--bg2);
-  line-height:1
-}
-.chat-info {
-  flex:1;
-  min-width:0
-}
-.chat-nick {
-  color:var(--text);
-  font-size:14px;
-  display:flex;
-  align-items:center;
-  gap:4px
-}
-.chat-nick-text,
-.chat-id,
-.panel-header-title,
-.panel-header-group-id {
-  min-width:0;
-  overflow:hidden;
-  text-overflow:ellipsis;
-  white-space:nowrap
-}
-.chat-left-tag {
-  flex-shrink:0;
-  color:var(--danger);
-  font-size:10px;
-  font-weight:500
-}
-.chat-id {
-  color:var(--text3);
-  font-size:11px;
-  font-family:monospace;
-  max-width:55%;
-  flex-shrink:1
-}
-.chat-subtitle {
-  display:flex;
-  align-items:center;
-  gap:6px;
-  min-width:0;
-  height:17px
-}
-.chat-preview {
-  color:var(--text2);
-  font-size:12px;
-  white-space:nowrap;
-  overflow:hidden;
-  text-overflow:ellipsis;
-  min-width:0;
-  flex:1
-}
-.chat-meta {
-  flex-shrink:0;
-  text-align:right
-}
-.chat-meta-row {
-  display:flex;
-  align-items:center;
-  justify-content:flex-end;
-  gap:2px;
-  margin-top:3px
-}
-.chat-time {
-  color:var(--text3);
-  font-size:11px
-}
-.chat-count {
-  background:var(--accent);
-  color:#fff;
-  font-size:10px;
-  border-radius:8px;
-  padding:1px 6px;
-  display:inline-block
-}
-.remark-btn {
-  background:none;
-  border:none;
-  cursor:pointer;
-  color:var(--text3);
-  font-size:12px;
-  padding:2px 4px;
-  border-radius:4px;
-  transition:color .15s,background .15s;
-  line-height:1
-}
-.remark-btn:hover {
-  color:var(--accent);
-  background:var(--bg3)
-}
-.spinning {
-  display:inline-block;
-  animation:load-spin .7s linear infinite
-}
-.chat-empty {
-  color:var(--text3);
-  text-align:center;
-  padding:32px 0;
-  font-size:13px
-}
-.chat-pager {
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  gap:10px;
-  padding:6px 10px;
-  border-top:1px solid var(--border);
-  flex-shrink:0;
-  font-size:12px;
-  color:var(--text2)
-}
-.chat-pager button {
-  background:var(--bg3);
-  border:1px solid var(--border);
-  border-radius:4px;
-  padding:2px 10px;
-  cursor:pointer;
-  color:var(--text);
-  font-size:12px;
-  transition:background .15s
-}
-.chat-pager button:hover:not(:disabled) {
-  background:var(--accent);
-  color:#fff
-}
-.chat-pager button:disabled {
-  opacity:.3;
-  cursor:default
-}
-.chat-history-panel {
-  flex:1;
-  background:var(--bg2);
-  border:1px solid var(--border);
-  border-radius:var(--radius);
-  box-shadow:var(--shadow-sm);
-  display:flex;
-  flex-direction:column;
-  overflow:hidden
-}
-.history-body {
-  flex:1;
-  overflow-y:auto;
-  padding:12px 16px
-}
-.history-hint {
-  text-align:center;
-  color:var(--text3);
-  font-size:12px;
-  padding:8px 0
-}
-.loading-older {
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  gap:6px
-}
-.load-spinner {
-  width:14px;
-  height:14px;
-  border:2px solid var(--text3);
-  border-top-color:transparent;
-  border-radius:50%;
-  animation:load-spin .7s linear infinite
-}
-@keyframes load-spin { to { transform:rotate(360deg) } }
-.load-older-btn {
-  background:var(--bg-float);
-  border:1px solid var(--border);
-  color:var(--text2);
-  font-size:12px;
-  padding:3px 14px;
-  border-radius:12px;
-  cursor:pointer
-}
-.load-older-btn:hover {
-  color:var(--accent);
-  border-color:var(--accent)
-}
-.event-wrap {
-  display:flex;
-  justify-content:center;
-  margin-bottom:14px
-}
-.event-box {
-  display:inline-flex;
-  align-items:center;
-  gap:8px;
-  padding:6px 16px;
-  background:var(--border);
-  border-radius:16px;
-  font-size:13px;
-  color:var(--text2)
-}
-.event-avatar {
-  width:24px;
-  height:24px;
-  border-radius:50%;
-  object-fit:cover;
-  flex-shrink:0
-}
-.event-avatar-fallback {
-  width:24px;
-  height:24px;
-  border-radius:50%;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  background:var(--text3);
-  color:#fff;
-  font-size:11px;
-  font-weight:700;
-  flex-shrink:0
-}
-.event-uid {
-  font-family:monospace;
-  font-size:12px;
-  color:var(--text2);
-  max-width:160px;
-  overflow:hidden;
-  text-overflow:ellipsis;
-  white-space:nowrap
-}
-.event-text {
-  color:var(--text3);
-  font-size:12px;
-  white-space:nowrap
-}
-.no-chat {
-  flex:1;
-  display:flex;
-  flex-direction:column;
-  align-items:center;
-  justify-content:center;
-  color:var(--text3)
-}
-.bubble-wrap {
-  display:flex;
-  gap:8px;
-  margin-bottom:14px;
-  max-width:100%
-}
-.bubble-wrap.self {
-  flex-direction:row-reverse
-}
-.bubble-avatar-wrap {
-  flex-shrink:0
-}
-.msg-avatar {
-  width:32px;
-  height:32px;
-  border-radius:50%;
-  -o-object-fit:cover;
-  object-fit:cover
-}
-.msg-avatar-bot {
-  width:32px;
-  height:32px;
-  border-radius:50%;
-  flex-shrink:0;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  background:linear-gradient(135deg,var(--accent),#7289da);
-  color:#fff
-}
-.msg-avatar-bot svg {
-  width:20px;
-  height:20px
-}
-.msg-avatar-fallback {
-  width:32px;
-  height:32px;
-  border-radius:50%;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  background:var(--accent);
-  color:#fff;
-  font-size:12px;
-  font-weight:700
-}
-.bubble-main {
-  max-width:70%;
-  min-width:0;
-  overflow:hidden;
-  word-break:break-all;
-  overflow-wrap:anywhere
-}
-:deep(.bubble-main *) {
-  word-break:break-all !important;
-  overflow-wrap:anywhere !important
-}
-.bubble-name {
-  color:var(--text2);
-  font-size:11px;
-  margin-bottom:3px
-}
-.self .bubble-name {
-  text-align:right
-}
-.bubble-uid {
-  color:var(--text3);
-  margin-left:4px;
-  font-family:monospace;
-  font-size:10px
-}
-.bubble-ts {
-  font-size:10px;
-  color:var(--text3);
-  margin-top:2px;
-  display:block
-}
-.bubble-src-tag {
-  font-size:9px;
-  padding:0 4px;
-  border-radius:3px;
-  line-height:15px;
-  background:#e8f5e9;
-  color:#2e7d32;
-  font-weight:600;
-  margin-left:4px
-}
-.ob-tag {
-  background:#e3f2fd;
-  color:#1565c0
-}
-.bubble-role-tag {
-  font-size:9px;
-  padding:0 4px;
-  border-radius:3px;
-  line-height:15px;
-  font-weight:600;
-  margin-left:4px
-}
-.role-owner {
-  background:#fff3e0;
-  color:#e65100
-}
-.role-admin {
-  background:#e8f5e9;
-  color:#2e7d32
-}
-.role-member {
-  background:#f5f5f5;
-  color:#757575
-}
-.role-bot {
-  background:#e3f2fd;
-  color:#1565c0
-}
-.bubble {
-  display:block;
-  padding:8px 12px;
-  border-radius:10px;
-  font-size:14px;
-  word-break:break-all;
-  overflow-wrap:anywhere;
-  min-width:0;
-  background:var(--border);
-  color:var(--text)
-}
-.bubble-self {
-  background:var(--accent);
-  color:#fff
-}
-.bubble-quote-ref {
-  max-width:260px;
-  margin-bottom:6px;
-  padding:5px 8px;
-  border-left:3px solid var(--accent);
-  border-radius:6px;
-  background:rgba(255,255,255,.42);
-  color:var(--text2)
-}
-.bubble-self .bubble-quote-ref {
-  border-left-color:rgba(255,255,255,.85);
-  background:rgba(255,255,255,.18);
-  color:rgba(255,255,255,.88)
-}
-.bubble-quote-author {
-  font-size:11px;
-  font-weight:600;
-  line-height:1.3;
-  margin-bottom:2px
-}
-.bubble-quote-content {
-  overflow:hidden;
-  text-overflow:ellipsis;
-  white-space:nowrap;
-  font-size:12px;
-  line-height:1.35
-}
-.bubble-media-img {
-  max-width:160px !important;
-  max-height:120px !important;
-  width:auto !important;
-  height:auto !important;
-  border-radius:6px;
-  display:block;
-  cursor:pointer;
-  object-fit:contain
-}
-.bubble-media-img:hover {
-  opacity:.9
-}
-.bubble-media-placeholder {
-  display:inline-block;
-  padding:8px 14px;
-  background:rgba(100,180,255,.15);
-  border:1px dashed rgba(100,180,255,.5);
-  border-radius:6px;
-  color:#7ab8ff;
-  cursor:pointer;
-  font-size:13px;
-  user-select:none
-}
-.bubble-media-placeholder:hover {
-  background:rgba(100,180,255,.25);
-  color:#a0d0ff
-}
-.bubble-media-audio {
-  display:block;
-  max-width:260px;
-  height:32px
-}
-.bubble-media-video {
-  max-width:320px;
-  max-height:220px;
-  border-radius:6px;
-  display:block
-}
-.bubble-media-link {
-  color:var(--accent);
-  text-decoration:none;
-  font-size:13px;
-  display:inline-flex;
-  align-items:center;
-  gap:4px
-}
-.bubble-media-link:hover {
-  text-decoration:underline
-}
-.bubble-media-text {
-  display:block;
-  margin-top:4px;
-  font-size:13px;
-  word-break:break-all;
-  word-wrap:break-word;
-  white-space:pre-wrap
-}
-:deep(.md-code) {
-  background:#00000026;
-  padding:1px 4px;
-  border-radius:3px;
-  font-size:12px;
-  font-family:monospace
-}
-:deep(.bubble-self .md-code) {
-  background:#fff3
-}
-:deep(.md-code-block) {
-  background:#0000001f;
-  padding:6px 8px;
-  border-radius:5px;
-  font-size:12px;
-  font-family:monospace;
-  white-space:pre-wrap !important;
-  word-break:break-all !important;
-  overflow-wrap:anywhere !important;
-  margin:4px 0;
-  display:block;
-  max-width:100%
-}
-:deep(.bubble-self .md-code-block) {
-  background:#ffffff26
-}
-:deep(.md-h) {
-  margin:6px 0 3px;
-  font-weight:700;
-  line-height:1.35
-}
-:deep(.md-h1) { font-size:19px }
-:deep(.md-h2) { font-size:17px }
-:deep(.md-h3) { font-size:15.5px }
-:deep(.md-h4) { font-size:14.5px }
-:deep(.md-h5) { font-size:13.5px }
-:deep(.md-h6) { font-size:13px; opacity:.85 }
-:deep(.md-hr) {
-  border:none;
-  border-top:1px solid #00000033;
-  margin:6px 0
-}
-:deep(.bubble-self .md-hr) { border-top-color:#ffffff4d }
-:deep(.md-list) {
-  margin:2px 0;
-  padding-left:20px
-}
-:deep(.md-list .md-list) { margin:0 }
-:deep(.md-mark) {
-  background:#ffe58a;
-  color:#5c4a00;
-  padding:0 3px;
-  border-radius:3px
-}
-:deep(.md-sup) {
-  color:var(--accent);
-  font-size:10px
-}
-:deep(.bubble-self .md-sup) { color:#b3d4ff }
-:deep(.md-code-block[data-lang])::before {
-  content:attr(data-lang);
-  display:block;
-  font-size:10px;
-  opacity:.6;
-  margin-bottom:2px;
-  text-transform:lowercase
-}
-:deep(.md-quote .md-quote) {
-  margin:2px 0
-}
-:deep(.md-quote) {
-  margin:4px 0;
-  padding:2px 8px;
-  border-left:3px solid var(--accent);
-  background:#00000014;
-  border-radius:0 4px 4px 0;
-  opacity:.85
-}
-:deep(.bubble-self .md-quote) {
-  border-left-color:#b3d4ff;
-  background:#ffffff1f
-}
-:deep(.md-table) {
-  border-collapse:collapse;
-  margin:4px 0;
-  font-size:12px;
-  max-width:100%;
-  display:block;
-  overflow-x:auto
-}
-:deep(.md-table th), :deep(.md-table td) {
-  border:1px solid #00000033;
-  padding:2px 8px;
-  text-align:left
-}
-:deep(.md-table th) {
-  background:#0000001a;
-  font-weight:600
-}
-:deep(.bubble-self .md-table th), :deep(.bubble-self .md-table td) {
-  border-color:#ffffff4d
-}
-:deep(.bubble-self .md-table th) {
-  background:#ffffff26
-}
-:deep(.md-link) {
-  color:var(--accent);
-  text-decoration:underline
-}
-:deep(.bubble-self .md-link) {
-  color:#b3d4ff
-}
-:deep(.mention) {
-  color:var(--accent);
-  background:var(--accent-soft);
-  padding:0 4px;
-  border-radius:4px;
-  font-weight:600
-}
-:deep(.bubble-self .mention) {
-  color:#fff;
-  background:rgba(255,255,255,.22)
-}
-:deep(.cmd-input) {
-  color:#409eff;
-  cursor:default;
-  font-weight:500
-}
-:deep(.bubble-self .cmd-input) {
-  color:#b3d4ff
-}
-:deep(.md-img) {
-  display:block;
-  max-width:200px;
-  max-height:160px;
-  width:auto;
-  height:auto;
-  border-radius:6px;
-  margin:4px 0;
-  cursor:pointer;
-  object-fit:contain
-}
-:deep(.md-img:hover) {
-  opacity:.9
-}
-:deep(.md-img-ph) {
-  display:inline-block;
-  margin:4px 0;
-  padding:4px 10px;
-  background:rgba(100,180,255,.15);
-  border:1px dashed rgba(100,180,255,.5);
-  border-radius:6px;
-  color:#7ab8ff;
-  cursor:pointer;
-  font-size:12px;
-  user-select:none
-}
-:deep(.md-img-ph:hover) {
-  background:rgba(100,180,255,.25);
-  color:#a0d0ff
-}
-:deep(.kb-wrap) {
-  margin-top:6px;
-  display:flex;
-  flex-direction:column;
-  gap:6px
-}
-:deep(.kb-row) {
-  display:flex;
-  gap:6px;
-  flex-wrap:wrap
-}
-:deep(.kb-btn) {
-  display:inline-flex;
-  align-items:center;
-  gap:3px;
-  background:var(--accent);
-  color:#fff;
-  border:1px solid var(--accent);
-  border-radius:6px;
-  padding:4px 10px;
-  font-size:11px;
-  font-weight:500;
-  cursor:default;
-  white-space:nowrap
-}
-:deep(.kb-btn.kb-t0) {
-  background:var(--info);
-  border-color:var(--info)
-}
-:deep(.bubble-self .kb-btn) {
-  background:#ffffff30;
-  border-color:#ffffff50
-}
-.bubble-row {
-  display:flex;
-  align-items:flex-end;
-  gap:6px;
-  min-width:0;
-  max-width:100%
-}
-.self .bubble-row {
-  flex-direction:row-reverse
-}
-.bubble-actions {
-  display:grid;
-  grid-template-rows:repeat(2, 17px);
-  grid-auto-flow:column;
-  grid-auto-columns:max-content;
-  gap:2px;
-  opacity:0;
-  transition:opacity .15s
-}
-.bubble-row:hover .bubble-actions {
-  opacity:1
-}
-.action-btn {
-  background:var(--bg2);
-  border:1px solid var(--border);
-  border-radius:4px;
-  color:var(--text2);
-  font-size:10px;
-  min-width:24px;
-  height:17px;
-  padding:0 5px;
-  cursor:pointer;
-  white-space:nowrap;
-  line-height:1;
-  display:flex;
-  align-items:center;
-  justify-content:center
-}
-.action-btn:hover {
-  color:var(--accent);
-  border-color:var(--accent)
-}
-.action-icon {
-  display:block;
-  width:12px;
-  height:12px;
-  flex:none
-}
-.action-btn.recall:hover:not(:disabled) {
-  color:var(--danger);
-  border-color:var(--danger)
-}
-.action-btn.mute:hover:not(:disabled) {
-  color:#d97706;
-  border-color:#d97706
-}
-.action-btn:disabled {
-  opacity:.4;
-  cursor:default
-}
-.recalled-tag {
-  display:inline-block;
-  background:rgba(255,152,0,.15);
-  color:#e65100;
-  font-size:11px;
-  padding:1px 6px;
-  border-radius:3px;
-  margin-bottom:4px
-}
-.audit-reject {
-  background:rgba(244,67,54,.15);
-  color:#c62828
-}
-.audit-tag {
-  display:inline-block;
-  background:rgba(33,150,243,.12);
-  color:#1565c0;
-  font-size:11px;
-  padding:1px 6px;
-  border-radius:3px;
-  margin-bottom:4px
-}
-.raw-data-box {
-  background:var(--bg2);
-  border:1px solid var(--border);
-  border-radius:6px;
-  padding:8px 10px;
-  font-size:11px;
-  color:var(--text2);
-  margin-top:4px;
-  max-height:200px;
-  overflow:auto;
-  white-space:pre-wrap;
-  word-break:break-all
-}
-.send-area {
-  border-top:1px solid var(--border);
-  padding:10px 14px;
-  flex-shrink:0
-}
-.quote-preview {
-  display:flex;
-  align-items:center;
-  gap:8px;
-  margin-bottom:8px;
-  padding:7px 10px;
-  border-left:3px solid var(--accent);
-  border-radius:6px;
-  background:var(--bg3);
-  color:var(--text2);
-  min-width:0
-}
-.quote-main {
-  flex:1;
-  display:flex;
-  flex-direction:column;
-  gap:2px;
-  min-width:0
-}
-.quote-title {
-  color:var(--accent);
-  font-size:12px;
-  font-weight:600
-}
-.quote-text {
-  overflow:hidden;
-  text-overflow:ellipsis;
-  white-space:nowrap;
-  font-size:12px
-}
-.quote-clear {
-  width:22px;
-  height:22px;
-  border:1px solid var(--border);
-  border-radius:5px;
-  background:var(--bg2);
-  color:var(--text3);
-  cursor:pointer;
-  line-height:18px;
-  flex-shrink:0
-}
-.quote-clear:hover {
-  color:var(--danger);
-  border-color:var(--danger)
-}
-.send-toolbar {
-  display:flex;
-  align-items:center;
-  gap:8px;
-  margin-bottom:6px;
-  flex-wrap:wrap
-}
-.msg-type-btns {
-  display:flex;
-  gap:0;
-  border:1px solid var(--border);
-  border-radius:8px;
-  overflow:hidden;
-  background:var(--bg3)
-}
-.msg-type-btn {
-  border:none;
-  background:transparent;
-  color:var(--text2);
-  padding:5px 14px;
-  font-size:12px;
-  white-space:nowrap;
-  cursor:pointer;
-  transition:background .15s,color .15s;
-  border-right:1px solid var(--border)
-}
-.msg-type-btn:last-child {
-  border-right:none
-}
-.msg-type-btn:hover {
-  color:var(--text)
-}
-.msg-type-btn.active {
-  background:var(--accent);
-  color:#fff
-}
-.msg-type-btn:disabled {
-  opacity:.4;
-  cursor:not-allowed
-}
-.send-type-select {
-  background:var(--bg3);
-  color:var(--text);
-  border:1px solid var(--border);
-  border-radius:6px;
-  padding:3px 8px;
-  font-size:12px;
-  cursor:pointer;
-  outline:none
-}
-.send-custom-id-row {
-  display:flex;
-  margin-bottom:6px
-}
-.send-custom-id {
-  background:var(--bg3);
-  color:var(--text);
-  border:1px solid var(--border);
-  border-radius:6px;
-  padding:3px 8px;
-  font-size:12px;
-  outline:none;
-  flex:1;
-  min-width:0
-}
-.send-img-label {
-  cursor:pointer;
-  display:flex;
-  align-items:center
-}
-.send-icon {
-  width:20px;
-  height:20px;
-  color:var(--text2);
-  transition:color .15s
-}
-.send-img-label:hover .send-icon {
-  color:var(--accent)
-}
-.send-img-tag {
-  font-size:11px;
-  color:var(--accent);
-  background:var(--bg3);
-  border-radius:4px;
-  padding:2px 6px;
-  display:flex;
-  align-items:center;
-  gap:4px
-}
-.send-img-preview {
-  width:24px;
-  height:24px;
-  border-radius:3px;
-  -o-object-fit:cover;
-  object-fit:cover;
-  flex-shrink:0
-}
-.send-img-remove {
-  cursor:pointer;
-  font-size:14px;
-  color:var(--text3)
-}
-.send-img-remove:hover {
-  color:var(--danger)
-}
-.ark-form {
-  display:flex;
-  flex-direction:column;
-  gap:6px;
-  margin-top:4px
-}
-.ark-grid {
-  display:grid;
-  grid-template-columns:1fr 1fr;
-  gap:4px 12px
-}
-.ark-field {
-  display:flex;
-  align-items:center;
-  gap:4px
-}
-.ark-field label {
-  font-size:10px;
-  color:var(--text3);
-  min-width:80px;
-  flex-shrink:0;
-  text-align:right;
-  font-family:monospace
-}
-.ark-field input {
-  flex:1;
-  min-width:0;
-  background:var(--bg3);
-  color:var(--text);
-  border:1px solid var(--border);
-  border-radius:5px;
-  padding:4px 6px;
-  font-size:12px;
-  outline:none;
-  transition:border-color .15s
-}
-.ark-field input:focus {
-  border-color:var(--accent)
-}
-.ark-hint {
-  font-size:11px;
-  color:var(--text3);
-  margin-top:2px
-}
-.ark-send-btn {
-  align-self:flex-end;
-  margin-top:4px
-}
-.send-input-row {
-  display:flex;
-  gap:8px
-}
-.send-input {
-  flex:1;
-  resize:none;
-  background:var(--bg3);
-  color:var(--text);
-  border:1px solid var(--border);
-  border-radius:8px;
-  padding:8px 10px;
-  font-size:13px;
-  outline:none;
-  font-family:inherit;
-  transition:border-color .15s
-}
-.send-input:focus {
-  border-color:var(--accent)
-}
-.send-btn {
-  background:var(--accent);
-  color:#fff;
-  border:none;
-  border-radius:8px;
-  padding:0 20px;
-  font-size:13px;
-  font-weight:600;
-  cursor:pointer;
-  transition:opacity .15s;
-  align-self:flex-end;
-  height:36px
-}
-.send-btn:hover {
-  opacity:.85
-}
-.send-btn:disabled {
-  opacity:.4;
-  cursor:default
-}
-.send-hint {
-  font-size:11px;
-  color:var(--text3);
-  margin-top:4px
-}
-.send-error {
-  font-size:12px;
-  color:var(--danger);
-  margin-top:4px
-}
-.panel-header-info {
-  font-size:11px;
-  color:var(--text3);
-  font-family:monospace;
-  display:flex;
-  align-items:center;
-  gap:4px
-}
-.panel-header-title {
-  max-width:260px
-}
-.panel-header-group-id {
-  color:var(--text3);
-  font-family:monospace;
-  font-size:11px;
-  max-width:220px
-}
-.header-action-btn {
-  height:24px;
-  display:inline-flex;
-  align-items:center;
-  gap:4px;
-  padding:2px 7px;
-  border:1px solid var(--border);
-  border-radius:4px;
-  background:var(--bg3);
-  color:var(--text2);
-  font-size:11px;
-  cursor:pointer;
-  white-space:nowrap
-}
-.header-action-btn:hover:not(:disabled) {
-  color:var(--accent);
-  border-color:var(--accent)
-}
-.header-action-btn:disabled {
-  opacity:.5;
-  cursor:default
-}
-.header-pencil {
-  font-size:13px;
-  line-height:1
-}
-.group-refresh-error {
-  color:var(--danger);
-  font-size:11px;
-  font-weight:400
-}
-.group-action-message {
-  color:#16803a;
-  font-size:11px;
-  font-weight:500
-}
-.mute-dialog { display:flex; flex-direction:column; gap:14px }
-.mute-member { display:flex; align-items:center; gap:10px; min-width:0 }
-.mute-avatar { width:40px; height:40px; border-radius:50%; object-fit:cover; flex-shrink:0 }
-.mute-name { color:var(--text); font-size:14px; font-weight:600 }
-.mute-openid { color:var(--text3); font:11px monospace; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:320px }
-.mute-label { color:var(--text2); font-size:12px; font-weight:600 }
-.mute-presets { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:6px }
-.mute-preset { height:32px; border:1px solid var(--border); border-radius:4px; background:var(--bg3); color:var(--text2); cursor:pointer; font-size:12px }
-.mute-preset:hover, .mute-preset.active { color:var(--accent); border-color:var(--accent); background:var(--accent-soft) }
-.mute-custom { display:flex; align-items:center; justify-content:space-between; gap:12px; color:var(--text2); font-size:12px }
-.mute-custom input { width:120px; height:30px; box-sizing:border-box; border:1px solid var(--border); border-radius:4px; background:var(--bg2); color:var(--text); padding:0 8px; outline:none }
-.mute-custom input:focus { border-color:var(--accent) }
-.mute-error { color:var(--danger); font-size:12px }
-.mute-actions { display:flex; justify-content:flex-end; gap:8px; flex-wrap:wrap; margin-top:2px }
-.mute-btn { height:32px; border-radius:4px; padding:0 12px; border:1px solid var(--border); cursor:pointer; font-size:12px }
-.mute-btn:disabled { opacity:.45; cursor:default }
-.mute-btn.ghost { background:var(--bg2); color:var(--text2) }
-.mute-btn.primary { background:var(--accent); color:#fff; border-color:var(--accent) }
-.refresh-msgid-btn {
-  background:none;
-  border:none;
-  padding:2px;
-  cursor:pointer;
-  color:var(--text3);
-  display:flex;
-  align-items:center;
-  border-radius:4px;
-  transition:color .15s,background .15s
-}
-.refresh-msgid-btn:hover {
-  color:var(--accent);
-  background:var(--bg3)
-}
-.refresh-msgid-btn svg {
-  width:14px;
-  height:14px
-}
-.mobile-back-btn {
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  width:28px;
-  height:28px;
-  border:none;
-  background:var(--bg3);
-  border-radius:6px;
-  color:var(--text);
-  cursor:pointer;
-  flex-shrink:0;
-  transition:background .15s
-}
-.mobile-back-btn:hover {
-  background:var(--border)
-}
-.mobile-back-btn svg {
-  width:18px;
-  height:18px
-}
-@media(max-width:767px) {
-  .msg-page {
-  height:calc(100vh - 60px)
-}
-.msg-layout {
-  flex-direction:column;
-  height:100%
-}
-.chat-list-panel {
-  width:100%;
-  max-height:none;
-  height:100%;
-  flex:1;
-  border-radius:10px
-}
-.chat-list-panel.mobile-hidden {
-  display:none
-}
-.chat-history-panel {
-  width:100%;
-  height:100%;
-  flex:1;
-  border-radius:10px
-}
-.chat-history-panel.mobile-hidden {
-  display:none
-}
-.bubble-main {
-  max-width:85%
-}
-.history-body {
-  padding:10px
-}
-.send-area {
-  padding:8px 10px
-}
-.send-toolbar {
-  gap:6px
-}
-.msg-type-btn {
-  padding:6px 0;
-  flex:1
-}
-.msg-type-btns {
-  flex:1 1 auto;
-  min-width:180px;
-  display:flex
-}
-.send-mode-select {
-  max-width:96px;
-  flex-shrink:0
-}
-.send-input-row {
-  flex-direction:row;
-  align-items:flex-end;
-  gap:6px
-}
-.send-input {
-  flex:1;
-  min-width:0
-}
-.send-btn {
-  width:auto;
-  height:auto;
-  padding:6px 12px;
-  font-size:12px;
-  flex-shrink:0;
-  align-self:stretch
-}
-.panel-header {
-  padding:8px 10px;
-  font-size:13px
-}
-.panel-header-title {
-  max-width:160px
-}
-.panel-header-group-id {
-  max-width:140px
-}
-.header-action-btn span:last-child {
-  display:none
-}
-.header-action-btn {
-  width:26px;
-  justify-content:center;
-  padding:2px
-}
-.ark-grid {
-  grid-template-columns:1fr
-}
-.msg-title {
-  font-size:16px;
-  margin:0 0 8px
-}
-}
-.lightbox-overlay {
-  position:fixed;
-  top:0;left:0;right:0;bottom:0;
-  background:rgba(0,0,0,.75);
-  z-index:9999;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  cursor:pointer
-}
-.lightbox-img {
-  max-width:90vw;
-  max-height:90vh;
-  object-fit:contain;
-  border-radius:8px;
-  cursor:default
-}
-.lightbox-close {
-  position:fixed;
-  top:16px;right:24px;
-  color:#fff;
-  font-size:36px;
-  cursor:pointer;
-  line-height:1
-}
-</style>
+<style scoped src="./messages.css"></style>

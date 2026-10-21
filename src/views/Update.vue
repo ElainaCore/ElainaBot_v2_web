@@ -152,7 +152,19 @@ onUnmounted(() => { pollId++ })
 
     <div class="upd-cols">
       <div class="upd-card upd-col-log">
-        <div class="upd-card-header"><span class="upd-title"><SvgIcon name="document-text" :size="15" class="upd-title-ic" />更新日志</span><span class="upd-spacer" /><a href="https://github.com/ElainaCore/ElainaBot_v2" target="_blank" rel="noopener" title="GitHub" class="upd-github"><SvgIcon name="github" :size="16" /></a><button class="btn btn-xs" @click="fetchLogs" :disabled="logsLoading">{{ logsLoading ? '加载...' : '刷新' }}</button></div>
+        <div class="upd-card-header">
+          <span class="upd-title"><SvgIcon name="document-text" :size="15" class="upd-title-ic" />更新日志</span>
+          <span class="upd-spacer" />
+          <div class="upd-community-links">
+            <a href="https://qm.qq.com/q/pQ3sp0xTyg" target="_blank" rel="noopener noreferrer"
+              class="upd-icon-action" title="QQ 交流群" aria-label="QQ 交流群">
+              <SvgIcon name="qq" :size="18" />
+            </a>
+            <a href="https://github.com/ElainaCore/ElainaBot_v2" target="_blank" rel="noopener"
+              title="GitHub" aria-label="GitHub" class="upd-icon-action upd-github"><SvgIcon name="github" :size="16" /></a>
+          </div>
+          <button class="btn btn-xs" @click="fetchLogs" :disabled="logsLoading">{{ logsLoading ? '加载...' : '刷新' }}</button>
+        </div>
         <div class="upd-log-wrap">
         <div class="upd-log-list">
           <div v-for="log in logs" :key="log.sha" class="upd-log-item">
@@ -248,8 +260,10 @@ onUnmounted(() => { pollId++ })
 .upd-log-author { color:var(--text3); font-size:11px; margin-top:2px }
 .upd-log-actions { margin-top:4px }
 .upd-empty { color:var(--text3); text-align:center; padding:20px 0; font-size:12px }
-.upd-github { display:inline-flex; align-items:center; color:var(--text2); transition:color .15s }
-.upd-github:hover { color:var(--text) }
+.upd-community-links { display:flex; align-items:center; gap:4px }
+.upd-icon-action { display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; flex-shrink:0; padding:0; border:0; border-radius:6px; background:transparent; color:var(--text2); text-decoration:none; cursor:pointer; transition:color .15s,background .15s }
+.upd-icon-action:hover { color:var(--accent); background:var(--accent-soft) }
+.upd-icon-action:focus-visible { outline:2px solid var(--accent); outline-offset:2px }
 .upd-mirror-custom { display:flex; gap:6px; margin-bottom:8px }
 .upd-input { flex:1; background:var(--bg3); border:1px solid var(--border); border-radius:6px; padding:4px 8px; font-size:12px; color:var(--text); outline:none }
 .upd-input:focus { border-color:var(--accent) }
