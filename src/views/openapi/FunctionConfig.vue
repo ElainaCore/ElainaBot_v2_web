@@ -4,6 +4,8 @@ import Draggable from 'vuedraggable'
 import axios from '../../utils/axios'
 import SvgIcon from '../../components/SvgIcon.vue'
 
+const MENU_LIMIT = 20
+
 const SCOPES = [
   { key: 'c2c', short: '单聊', label: 'c2c 单聊' },
   { key: 'group', short: '群聊', label: 'group 群聊' },
@@ -59,7 +61,7 @@ const displayedCommands = computed(() => activePanels.value.map(record => {
     command: item.desc || (item.type === 'link' ? item.link : item.name) || '未填写指令',
   }
 }))
-const previewMenu = computed(() => menuDraft.value.slice(0, 10))
+const previewMenu = computed(() => menuDraft.value.slice(0, MENU_LIMIT))
 const openedPreviewMenu = computed(() => {
   const item = previewMenu.value[previewMenuOpen.value]
   return item?.type === 'menu' ? item : null
@@ -219,7 +221,7 @@ function setChildOpen(item) {
 }
 
 function addMenu() {
-  if (menuDraft.value.length >= 10) return showNotice('一级菜单最多 10 项', 'error')
+  if (menuDraft.value.length >= MENU_LIMIT) return showNotice(`一级菜单最多 ${MENU_LIMIT} 项`, 'error')
   menuDraft.value.push(menuDefault())
   const item = menuDraft.value[menuDraft.value.length - 1]
   menuOpen.value = new Set([sortKey(item)])
@@ -282,7 +284,7 @@ function serializeMenuItem(item) {
 }
 
 function validateMenu(items, nested = false) {
-  if (!nested && items.length > 10) throw new Error('一级菜单最多 10 项')
+  if (!nested && items.length > MENU_LIMIT) throw new Error(`一级菜单最多 ${MENU_LIMIT} 项`)
   items.forEach((item, index) => {
     if (!String(item.name || '').trim()) throw new Error(`第 ${index + 1} 个菜单缺少名称`)
     if (item.type === 'send_message' && !String(item.send_message || '').trim()) throw new Error(`菜单“${item.name}”缺少指令`)
@@ -449,6 +451,7 @@ async function changeScope(nextScope) {
 async function addPanel() {
   if (!appid.value) return showNotice('请先选择机器人', 'error')
   if (panelsLoadedKey.value !== `${appid.value}:${scope.value}`) await loadPanels({ silent: true })
+  if (activePanels.value.length >= 20) return showNotice('单个场景最多配置 20 条指令', 'error')
   const key = `draft-${++draftCounter}`
   const record = {
     panel_id: '',
@@ -793,7 +796,7 @@ onMounted(async () => {
           <header class="surface-header">
             <div>
               <h2>菜单项</h2>
-              <p>最多 10 个一级菜单，保存后立即对所有用户生效。<span>{{ menuDraft.length }} / 10</span><span v-if="menuVersion != null"> · 版本 {{ menuVersion }}</span></p>
+              <p>最多 {{ MENU_LIMIT }} 个一级菜单，保存后立即对所有用户生效。<span>{{ menuDraft.length }} / {{ MENU_LIMIT }}</span><span v-if="menuVersion != null"> · 版本 {{ menuVersion }}</span></p>
             </div>
             <div class="toolbar">
               <button class="btn" :disabled="busy" @click="loadMenu()">查询</button>
@@ -869,7 +872,7 @@ onMounted(async () => {
               </template>
             </Draggable>
             <div v-else class="empty-state">暂无自定义菜单</div>
-            <button class="add-row" :disabled="menuDraft.length >= 10" @click="addMenu"><SvgIcon name="plus" :size="16" />新增菜单项</button>
+            <button class="add-row" :disabled="menuDraft.length >= MENU_LIMIT" @click="addMenu"><SvgIcon name="plus" :size="16" />新增菜单项</button>
           </div>
         </section>
 
@@ -930,7 +933,7 @@ onMounted(async () => {
               </template>
             </Draggable>
             <div v-else class="empty-state">当前场景暂无指令</div>
-            <button class="add-row" @click="addPanel"><SvgIcon name="plus" :size="16" />创建指令面板</button>
+            <button class="add-row" :disabled="busy || activePanels.length >= 20" @click="addPanel"><SvgIcon name="plus" :size="16" />创建指令面板</button>
           </div>
         </section>
       </main>

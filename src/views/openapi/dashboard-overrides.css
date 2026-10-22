@@ -1,0 +1,95 @@
+/* Embed the dashboard content inside the framework navigation. */
+.qqdash.qqdash { min-height: 100%; height: auto; font-size: 14px; line-height: normal; color-scheme: light; }
+.qqdash.qqdash .app-shell { display: block; min-height: 100%; }
+.qqdash.qqdash .main { min-height: 100%; padding: 0; }
+.qqdash.qqdash .page-manage { padding-top: 36px; }
+.qqdash .manage-body, .qqdash .manage-nav, .qqdash .switch-service-panel,
+.qqdash .connect-grid, .qqdash .guide-card, .qqdash .guide-pane { min-width: 0; }
+.qqdash .guide-tabs { max-width: 100%; overflow-x: auto; }
+.qqdash button, .qqdash input, .qqdash textarea, .qqdash select { font-family: var(--font-sans); }
+.qqdash button { color: inherit; }
+.qqdash button:disabled { cursor: not-allowed; opacity: .45; }
+.qqdash .btn.primary { color: #fff; }
+.qqdash .btn.ghost { color: var(--ink-2); }
+.qqdash .page-head.has-back { align-items: center; }
+.qqdash .bot-link-copy { display: inline-flex; padding: 5px; color: var(--ink-4); }
+.qqdash .bot-link-copy:hover { color: var(--accent); }
+.qqdash .ec-channel-text > b, .qqdash .ec-channel-text > small { display: block; }
+.qqdash .ec-event-key { overflow-wrap: anywhere; }
+.qqdash .notify-detail-modal .html-body { overflow-wrap: anywhere; line-height: 1.7; }
+.qqdash .notify-detail-modal .html-body img { max-width: 100%; height: auto; }
+.qqdash .notify-detail-modal .html-body a, .qqdash .nd-body > a { color: var(--accent); }
+.qqdash .webhook-editor-tools { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+.qqdash.qqdash .avatar-picker-modal .avatar-picker-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); max-height: 55vh; margin: 0; padding: 0; gap: 10px; }
+.qqdash.qqdash .avatar-picker-modal .avatar-option { width: auto; height: auto; border-radius: 18px; padding: 10px 8px 12px; }
+.qqdash.qqdash .avatar-picker-modal .avatar-option img { width: 72px; height: 72px; max-width: 100%; border: 0; }
+.qqdash .row > .row-chev { color: var(--ink-4); flex: none; }
+.qqdash .admin-value { display: flex; flex-direction: column; gap: 3px; text-align: right; }
+.qqdash .admin-value-name { color: var(--ink-2); font-size: 13px; font-weight: 600; }
+.qqdash .admin-value-qq { color: var(--ink-4); font-size: 12px; }
+.qqdash .avatar-stack { display: flex; padding-left: 5px; }
+.qqdash .avatar-stack-item { display: grid; place-items: center; width: 26px; height: 26px; margin-left: -5px; border: 2px solid #fff; border-radius: 50%; background: var(--accent-soft); color: var(--accent); font-size: 11px; overflow: hidden; }
+.qqdash .avatar-stack-item img { width: 100%; height: 100%; object-fit: cover; }
+.qqdash .sensitive-alert-config .sensitive-alert-grid { display: flex; flex-direction: column; gap: 16px; margin: 0; padding: 0 16px 16px; }
+.qqdash .assistant-qr-trigger.is-open > .connect-profile-qr-pop { opacity: 1; visibility: visible; transform: translateY(0); pointer-events: auto; }
+.qqdash .sensitive-alert-config .create-friend-qr-img img { width: 100%; height: 100%; object-fit: contain; }
+.qqdash .group-admin-card__panel-copy { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; }
+.qqdash .group-admin-card__panel + .group-admin-card__panel { margin-top: 10px; }
+.qqdash .group-admin-card__chip:not(.is-on) { color: var(--ink-4); }
+.qqdash .group-admin-card__chip.is-on > span { color: var(--accent); }
+.qqdash .group-admin-card__select-all, .qqdash .group-admin-card__selection-count { flex-shrink: 0; white-space: nowrap; }
+.qqdash .group-admin-card__whitelist-info { display: flex; flex-direction: column; gap: 4px; }
+.qqdash .group-admin-card__whitelist-info small { color: var(--ink-4); }
+.qqdash .group-admin-card__add-button { display: inline-flex; align-items: center; gap: 5px; }
+.qqdash .friend-range-modal { width: min(460px, calc(100vw - 32px)); }
+.qqdash .friend-range-option { display: flex; align-items: center; gap: 10px; padding: 16px; border: 1px solid var(--line); border-radius: 12px; font-size: 13px; cursor: pointer; }
+.qqdash .friend-range-option + .friend-range-option { margin-top: 10px; }
+.qqdash .friend-range-option.active { border-color: var(--accent); background: var(--accent-soft); }
+.qqdash .friend-range-option input { accent-color: var(--accent); }
+.qqdash .am-name-row { display: flex; align-items: center; gap: 8px; }
+.qqdash .fi-lightbox { position: fixed; z-index: 1600; inset: 0; display: grid; place-items: center; padding: 28px; background: rgba(15, 23, 42, .8); cursor: zoom-out; }
+.qqdash .fi-lightbox img { display: block; max-width: 100%; max-height: calc(100vh - 56px); object-fit: contain; border-radius: 10px; }
+.qqdash .mc-modal .input-wrap { display: flex; align-items: center; }
+.qqdash .mc-modal .input-wrap input { min-width: 0; width: 100%; }
+.qqdash .mc-modal .input-count { padding-right: 12px; color: var(--ink-4); font-size: 11px; white-space: nowrap; }
+.qqdash .mc-modal .input-wrap > .input-count { position: static; }
+.qqdash .mc-item-actions .switch { margin-right: 4px; }
+.qqdash .guide-code-card { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.qqdash .guide-code-card code { overflow-wrap: anywhere; }
+.qqdash .guide-manual-card .guide-manual-row { grid-template-columns: 90px minmax(0, 1fr) 30px; }
+.qqdash .guide-manual-trigger { width: 100%; text-align: left; }
+.qqdash .modal-root ~ .modal-root { z-index: 1201; }
+.qqdash .v2-qr-overlay { z-index: 1300; padding: 16px; backdrop-filter: blur(4px); }
+.qqdash .v2-qr-overlay > div { max-height: calc(100vh - 32px); overflow-y: auto; }
+@media (max-width: 1000px) {
+  .qqdash.qqdash .page { padding-left: 24px; padding-right: 24px; }
+  .qqdash.qqdash .manage-layout { grid-template-columns: 190px minmax(0, 1fr); gap: 18px; }
+  .qqdash .page-title-row { flex-wrap: wrap; }
+}
+@media (max-width: 720px) {
+  .qqdash.qqdash .page { padding: 24px 16px 40px; }
+  .qqdash.qqdash .manage-layout { grid-template-columns: minmax(0, 1fr); }
+  .qqdash.qqdash .manage-nav { flex-direction: row; position: static; overflow: auto; border-radius: 16px; gap: 4px; padding: 6px; }
+  .qqdash.qqdash .manage-nav .mn-item { width: auto; flex: none; padding: 11px 12px; white-space: nowrap; }
+  .qqdash .page-head.has-back { flex-wrap: wrap; }
+  .qqdash .page-head.has-back .page-actions { width: auto; margin-left: auto; }
+  .qqdash .row { padding: 14px 12px; }
+  .qqdash .row > .row-value { max-width: 45%; }
+  .qqdash .admin-value { max-width: 42%; overflow-wrap: anywhere; }
+  .qqdash .group-admin-card__panel-head { align-items: flex-start; flex-direction: column; }
+  .qqdash .mc-section { padding: 16px; }
+  .qqdash .mc-section-head { gap: 10px; }
+  .qqdash .mc-section-head .sec-group-action { flex: none; }
+  .qqdash .guide-manual-card .guide-manual-row { grid-template-columns: 70px minmax(0, 1fr) 30px; }
+  .qqdash .guide-summary { min-width: 0; }
+  .qqdash .guide-tab { flex: none; }
+  .qqdash .bot-manage-qr-trigger .connect-profile-qr-pop { left: auto; right: 0; transform: translateY(-4px); }
+  .qqdash .bot-manage-qr-trigger:hover .connect-profile-qr-pop,
+  .qqdash .bot-manage-qr-trigger:focus-visible .connect-profile-qr-pop { transform: translateY(0); }
+  .qqdash .bot-manage-qr-trigger .connect-profile-qr-pop:before { left: auto; right: 4px; }
+  .qqdash .bot-manage-qr-trigger:after { left: auto; right: 0; width: 100px; transform: none; }
+  .qqdash .ec-channel-cards { grid-template-columns: minmax(0, 1fr); }
+  .qqdash .ec-event-item { flex-wrap: wrap; }
+  .qqdash .ec-event-key { margin-left: 28px; max-width: calc(100% - 28px); }
+  .qqdash.qqdash .avatar-picker-modal .avatar-picker-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}

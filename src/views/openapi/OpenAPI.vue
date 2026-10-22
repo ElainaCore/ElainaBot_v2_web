@@ -1,14 +1,23 @@
 <script setup>
-import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import axios from '../../utils/axios'
 import AppIcon from './AppIcon.vue'
 import OpenAPILoginDialog from './OpenAPILoginDialog.vue'
 import QrCodeImage from './QrCodeImage.vue'
 import ReportLineChart from './ReportLineChart.vue'
-import { ADVANCED_MOCK_APIS, runAdvancedMock } from './advancedMocks'
 import './qqdash.css'
+import './official-dashboard.css'
+import './dashboard-overrides.css'
+import MenuCommandSettings from './MenuCommandSettings.vue'
+import ServiceGuide from './ServiceGuide.vue'
+import FeatureImages from './FeatureImages.vue'
+import GroupAdminSettings from './GroupAdminSettings.vue'
+import NotifyCenter from './NotifyCenter.vue'
+
 
 const UID = 'web_user'
+const HELPER_QR_URL = 'https://qq-ai.cdn-go.cn/web/neon/-/21fea1a6/q.qq.com_qqbot_dashboard/assets/qq-platform-assistant-qr.png'
+const showHelperQR = ref(false)
 
 /* ── 鉴权状态 ── */
 const status = reactive({
@@ -167,6 +176,20 @@ function subjectTypeText(type) {
   return ({ 0: '未认证', 1: '个人', 2: '企业', 3: '企业', 4: '未认证' })[type] || '开发者'
 }
 
+function firstCharacter(name) {
+  const value = String(name || '').trim()
+  if (!value) return ''
+  if (typeof Intl !== 'undefined' && Intl.Segmenter) {
+    return new Intl.Segmenter('zh-CN', { granularity: 'grapheme' }).segment(value)[Symbol.iterator]().next().value?.segment || ''
+  }
+  return Array.from(value)[0] || ''
+}
+
+function displaySubjectName(name) {
+  const first = firstCharacter(name)
+  return first ? `${first}*` : ''
+}
+
 function refreshScan() { stopScanPoll(); startScan() }
 function closeScan() {
   scanRequestId += 1
@@ -230,7 +253,7 @@ const currentDeveloper = computed(() => developers.value.find(item => item.id ==
 })
 
 function developerMark(developer) {
-  return (developer.name || developer.email || '主体').trim().charAt(0)
+  return firstCharacter(developer.name || developer.email || '主体')
 }
 
 async function loadDevelopers() {
@@ -271,7 +294,7 @@ async function switchDeveloper() {
     createDraft.avatarId = ''
     await loadBots()
     showDeveloperPicker.value = false
-    pushToast(`已切换到「${status.subjectName || '当前主体'}」`)
+    pushToast(`已切换到「${displaySubjectName(status.subjectName) || '当前主体'}」`)
   } catch (e) { pushToast(e.message) }
   developerSwitching.value = false
 }
@@ -284,9 +307,8 @@ const SECS = [
   { key: 'account-info', label: '账号信息' },
   { key: 'usage-scope', label: '服务范围' },
   { key: 'data', label: '运营数据' },
-  { key: 'notifications', label: '平台通知' },
+  { key: 'advanced', label: '高级设置' },
   { key: 'dev-settings', label: '开发设置' },
-  { key: 'advanced', label: '高级功能' },
 ]
 
 /* ── 机器人列表 ── */
@@ -356,7 +378,7 @@ const cur = reactive({
 })
 const detailLoading = ref(false)
 const baseInfo = reactive({ name: '', desc: '', avatar: '', uin: '' })
-const developerInfo = reactive({ developerId: '', subjectName: '', subjectType: 0 })
+const developerInfo = reactive({ developerId: '', subjectName: '', subjectType: 0, adminUin: '', adminNickName: '' })
 const privateProto = reactive({ status: 0, url: '', effectiveDate: '', email: '' })
 const isCertified = computed(() => [1, 2].includes(developerInfo.subjectType))
 const certificationDescription = computed(() => {
@@ -473,9 +495,8 @@ async function loadSection() {
   if (k === 'account-info') await loadAccount()
   else if (k === 'usage-scope') await loadScope()
   else if (k === 'data') await loadAllReports()
-  else if (k === 'notifications') await loadNotifications()
   else if (k === 'dev-settings') await loadDevSettings()
-  else if (k === 'advanced') resetAdvancedPayload()
+  else if (k === 'advanced') { await loadDevSettings(); await loadFeaturePreview() }
 }
 
 async function loadAccount() {
@@ -501,22 +522,134 @@ async function loadAccount() {
     developerInfo.developerId = di.developer_id || status.developerId
     developerInfo.subjectName = status.subjectName
     developerInfo.subjectType = di.subject_type ?? status.subjectType
+    developerInfo.adminUin = di.admin_uin === undefined ? '' : String(di.admin_uin)
+    developerInfo.adminNickName = di.admin_nick_name || ''
     const pp = r.private_proto || {}
     privateProto.status = pp.status ?? 0
     privateProto.url = pp.private_proto_url || ''
     privateProto.effectiveDate = pp.effective_date || ''
     privateProto.email = pp.private_proto_template?.email || ''
+    await loadAssistantMembers()
   } catch (e) { pushToast(e.message) }
   detailLoading.value = false
 }
 
-function openBotEditor(field) {
+const ASSISTANT_ROLE_OPTIONS = [
+  { key: 'ops', id: 5001, label: '运营权限' },
+  { key: 'dev', id: 5002, label: '开发权限' },
+]
+const assistantMembers = ref([])
+const assistantState = reactive({ loading: false, error: '' })
+const showAssistantManager = ref(false)
+const assistantDialog = reactive({ visible: false, uin: '', note: '', roles: ['dev'], saving: false })
+const assistantRoleDialog = reactive({ visible: false, member: null, roles: [], saving: false })
+
+function assistantHeader() {
+  return { sub_platform_id: 1904619620, appid: Number(cur.appid) }
+}
+
+function normalizeAssistant(profile) {
+  const roles = (profile.roles || []).map(role => Number(role) === 5002 ? 'dev' : Number(role) === 5001 ? 'ops' : '').filter(Boolean)
+  return {
+    uin: String(profile.uin || ''),
+    name: profile.nickname || 'QQ 用户',
+    avatar: profile.avatar_url || '',
+    roles,
+  }
+}
+
+async function loadAssistantMembers() {
+  assistantState.loading = true
+  assistantState.error = ''
+  try {
+    const result = await v2('/bopen/v2/member/getlist', { header: assistantHeader() })
+    assistantMembers.value = (result.profiles || []).map(normalizeAssistant).filter(member => member.uin)
+  } catch (e) {
+    assistantMembers.value = []
+    assistantState.error = e.message || '协助者列表加载失败'
+  }
+  assistantState.loading = false
+}
+
+function openAssistantDialog() {
+  assistantDialog.uin = ''
+  assistantDialog.note = ''
+  assistantDialog.roles = ['dev']
+  assistantDialog.visible = true
+}
+
+async function addAssistant() {
+  const uin = assistantDialog.uin.trim()
+  if (!/^\d{5,11}$/.test(uin)) return pushToast('QQ 号需为 5~11 位纯数字')
+  if (!assistantDialog.roles.length) return pushToast('请至少选择一种协助权限')
+  assistantDialog.saving = true
+  try {
+    await v2('/bopen/v2/member/add', {
+      id: { uin },
+      roles: assistantDialog.roles.map(key => ASSISTANT_ROLE_OPTIONS.find(role => role.key === key)?.id).filter(Boolean),
+      header: assistantHeader(),
+    })
+    assistantDialog.visible = false
+    pushToast('已添加协助者')
+    await loadAssistantMembers()
+  } catch (e) { pushToast(e.message) }
+  assistantDialog.saving = false
+}
+
+function openAssistantRoleDialog(member) {
+  assistantRoleDialog.member = member
+  assistantRoleDialog.roles = [...member.roles]
+  assistantRoleDialog.visible = true
+}
+
+async function saveAssistantRoles() {
+  const member = assistantRoleDialog.member
+  if (!member || !assistantRoleDialog.roles.length) return pushToast('请至少保留一种协助权限')
+  assistantRoleDialog.saving = true
+  const before = new Set(member.roles)
+  const after = new Set(assistantRoleDialog.roles)
+  const add = [...after].filter(role => !before.has(role))
+  const remove = [...before].filter(role => !after.has(role))
+  const tasks = []
+  if (add.length) tasks.push(v2('/bopen/v2/role/add', {
+    id: { uin: member.uin },
+    roles: add.map(key => ASSISTANT_ROLE_OPTIONS.find(role => role.key === key)?.id).filter(Boolean),
+    header: assistantHeader(),
+  }))
+  if (remove.length) tasks.push(v2('/bopen/v2/role/delete', {
+    id: { uin: member.uin },
+    roles: remove.map(key => ASSISTANT_ROLE_OPTIONS.find(role => role.key === key)?.id).filter(Boolean),
+    header: assistantHeader(),
+  }))
+  try {
+    await Promise.all(tasks)
+    assistantRoleDialog.visible = false
+    pushToast('协助者权限已更新')
+    await loadAssistantMembers()
+  } catch (e) { pushToast(e.message) }
+  assistantRoleDialog.saving = false
+}
+
+async function removeAssistant(member) {
+  if (!confirm(`确认移除协助者 ${member.name}（${member.uin}）？`)) return
+  try {
+    await v2('/bopen/v2/member/del', { id: { uin: member.uin }, header: assistantHeader() })
+    pushToast('已移除协助者')
+    await loadAssistantMembers()
+  } catch (e) { pushToast(e.message) }
+}
+
+const editorInput = ref(null)
+async function openBotEditor(field) {
   editor.field = field
   editor.value = field === 'name' ? baseInfo.name : baseInfo.desc
   editor.visible = true
+  await nextTick()
+  editorInput.value?.focus()
 }
 
 async function submitBotEditor() {
+  if (editor.loading) return
   const field = editor.field
   const value = editor.value.trim()
   if (field === 'name' && !value) {
@@ -795,31 +928,187 @@ const scope = reactive({
   allowGroup: false,
   allowChannel: false,
   friendRange: 'all',
+  searchable: false,
   friendInfos: [],
+  adminGroups: [],
+  adminPermissionTarget: 'all',
+  allGroupSwitches: {},
+  whitelistGroupSwitches: {},
   loaded: false,
 })
+const GROUP_PERMISSION_ITEMS = [
+  { id: 101, label: '进群申请管理', description: '处理机器人加入群聊的申请' },
+  { id: 104, label: '群黑名单管理', description: '管理群聊黑名单' },
+  { id: 201, label: '发言管理', description: '禁言或解除禁言群成员' },
+  { id: 202, label: '撤回消息', description: '撤回群成员发送的消息' },
+  { id: 102, label: '移除群成员', description: '将成员移出群聊' },
+]
+const groupPicker = reactive({ visible: false, loading: false, purpose: 'admin', groups: [], saving: false })
+const groupPermissionSaving = ref(false)
 const authExpanded = ref(false)
 async function loadScope() {
   detailLoading.value = true
   try {
     const r = await v2('/cgi-bin/v2/bot_scope_manager/scope_cfg/query', {
       bot_appid: Number(cur.appid),
-      query_filter: { scope_config: 1, white_list: 1, search_config: 1 },
+      query_filter: { scope_config: 1, white_list: 1, search_config: 1, group_admin_config: 1 },
     })
     const f = r.friend_scope_config || {}
     const g = r.group_scope_config || {}
     const c = r.channel_scope_config || {}
+    const search = r.bot_search_config || {}
+    const admin = r.group_admin_config || {}
     scope.allowFriend = (f.allow_others_add_friend || 0) === 2
     scope.friendRange = (f.friend_add_scope || 0) === 2 ? 'all' : 'friend'
     scope.allowGroup = (g.allow_be_added_to_group || 0) === 2
     scope.allowChannel = (c.allow_be_added_to_channel || 0) === 2
+    scope.searchable = Number(search.bot_search_status || 0) === 1
     scope.friendInfos = (r.friend_infos || []).map(item => ({
       uin: item.uin === undefined ? '' : String(item.uin),
       name: decodeNickname(item.nick_name),
     }))
+    const whitelistRules = admin.whitelist_groups || []
+    scope.allGroupSwitches = groupSwitchMap(admin.switches?.length ? admin.switches : [101, 201, 202].map(switch_id => ({ switch_id, current_value: 1 })))
+    const whiteSwitches = whitelistRules.flatMap(rule => Array.isArray(rule.switches) ? rule.switches : [])
+    scope.whitelistGroupSwitches = groupSwitchMap(whiteSwitches.length ? whiteSwitches : [101, 102, 201, 202].map(switch_id => ({ switch_id, current_value: 1 })))
+    scope.adminGroups = normalizeAdminGroups(whitelistRules, r.whitelist_groups_info || {})
     scope.loaded = true
   } catch (e) { pushToast(e.message) }
   detailLoading.value = false
+}
+
+function groupSwitchMap(switches) {
+  const result = Object.fromEntries(GROUP_PERMISSION_ITEMS.map(item => [item.id, false]))
+  for (const item of switches || []) {
+    const id = Number(item.switch_id)
+    if (Object.prototype.hasOwnProperty.call(result, id)) result[id] = Number(item.current_value || item.default_value) === 1
+  }
+  return result
+}
+
+function normalizeAdminGroups(rules, groupInfo) {
+  const ids = [...new Set((rules || []).flatMap(rule => rule.group_ids || []).map(String))]
+  return ids.map(id => {
+    const info = Array.isArray(groupInfo) ? groupInfo.find(item => String(item.group_id || item.group_code) === id) : groupInfo[id]
+    return { id, name: info?.group_name || info?.name || `群 ${id}` }
+  })
+}
+
+async function toggleSearchable() {
+  const searchable = !scope.searchable
+  try {
+    await v2('/cgi-bin/v2/bot_scope_manager/dev_capability/modify', {
+      bot_appid: Number(cur.appid),
+      set_dev_filter: { set_search_config: 1 },
+      bot_search_config: { bot_search_status: searchable ? 1 : 2 },
+    })
+    scope.searchable = searchable
+    pushToast(searchable ? '已允许被搜索到' : '已关闭搜索展示')
+  } catch (e) { pushToast(e.message) }
+}
+
+function setGroupPermissionTarget(target) {
+  scope.adminPermissionTarget = target
+}
+
+function toggleGroupPermission(id) {
+  const target = scope.adminPermissionTarget === 'all' ? scope.allGroupSwitches : scope.whitelistGroupSwitches
+  target[id] = !target[id]
+}
+
+async function saveGroupPermissions() {
+  const isAll = scope.adminPermissionTarget === 'all'
+  const switches = isAll ? scope.allGroupSwitches : scope.whitelistGroupSwitches
+  groupPermissionSaving.value = true
+  try {
+    await v2('/cgi-bin/v2/bot_scope_manager/dev_capability/modify', {
+      bot_appid: Number(cur.appid),
+      set_dev_filter: { set_group_admin_config: 1 },
+      group_admin_action: {
+        admin_scope: isAll ? 2 : 1,
+        add_group_ids: [],
+        remove_group_ids: [],
+        switches: GROUP_PERMISSION_ITEMS.map(item => ({ switch_id: item.id, current_value: switches[item.id] ? 1 : 2 })),
+      },
+    })
+    pushToast('群管理权限已保存')
+    await loadScope()
+  } catch (e) { pushToast(e.message) }
+  groupPermissionSaving.value = false
+}
+
+async function loadBotGroups() {
+  const groups = []
+  let pagingCookie = ''
+  let hasMore = true
+  let pages = 0
+  while (hasMore && pages < 20) {
+    const r = await v2('/cgi-bin/v2/bot_scope_manager/bot_group_list/query', {
+      bot_appid: Number(cur.appid),
+      paging_cookie: pagingCookie,
+      page_size: 20,
+    })
+    const result = r.groups || r.data?.groups || []
+    groups.push(...result.map(group => ({
+      id: String(group.group_id || group.group_code || ''),
+      name: group.group_name || `群 ${group.group_id || group.group_code || ''}`,
+      inGroup: group.in_group !== false,
+    })).filter(group => group.id))
+    pagingCookie = r.next_paging_cookie || r.paging_cookie || ''
+    hasMore = !!r.has_more && !!pagingCookie
+    pages += 1
+  }
+  return groups
+}
+
+async function openGroupPicker(purpose = 'admin') {
+  groupPicker.visible = true
+  groupPicker.purpose = purpose
+  groupPicker.groups = []
+  groupPicker.loading = true
+  try {
+    groupPicker.groups = (await loadBotGroups()).filter(group => group.inGroup)
+  } catch (e) { pushToast(e.message) }
+  groupPicker.loading = false
+}
+
+function groupAlreadySelected(group) {
+  if (groupPicker.purpose === 'admin') return scope.adminGroups.some(item => item.id === group.id)
+  return dev.sensitiveGroups.some(item => item.groupCode === group.id)
+}
+
+async function selectBotGroup(group) {
+  if (groupAlreadySelected(group) || groupPicker.saving) return
+  groupPicker.saving = true
+  try {
+    if (groupPicker.purpose === 'admin') {
+      if (scope.adminGroups.length >= 20) throw new Error('白名单群最多添加 20 个')
+      await v2('/cgi-bin/v2/bot_scope_manager/dev_capability/modify', {
+        bot_appid: Number(cur.appid),
+        set_dev_filter: { set_group_admin_config: 1 },
+        group_admin_action: { admin_scope: 1, add_group_ids: [Number(group.id)], remove_group_ids: [] },
+      })
+      await loadScope()
+      pushToast('已添加白名单群')
+    } else {
+      await modifySensitiveGroup(group.id, 1, group.name)
+    }
+    groupPicker.visible = false
+  } catch (e) { pushToast(e.message) }
+  groupPicker.saving = false
+}
+
+async function removeAdminGroup(group) {
+  if (!confirm(`确认移除白名单群「${group.name}」？`)) return
+  try {
+    await v2('/cgi-bin/v2/bot_scope_manager/dev_capability/modify', {
+      bot_appid: Number(cur.appid),
+      set_dev_filter: { set_group_admin_config: 1 },
+      group_admin_action: { admin_scope: 1, add_group_ids: [], remove_group_ids: [Number(group.id)] },
+    })
+    pushToast('已移除白名单群')
+    await loadScope()
+  } catch (e) { pushToast(e.message) }
 }
 async function toggleScope(which) {
   if (!isCertified.value) {
@@ -847,6 +1136,26 @@ async function toggleScope(which) {
     else scope.allowChannel = !scope.allowChannel
     pushToast('操作成功')
   } catch (e) { pushToast(e.message) }
+}
+
+async function saveFriendRange(range = scope.friendRange) {
+  try {
+    await v2('/cgi-bin/v2/bot_scope_manager/usage_scope/modify', {
+      bot_appid: Number(cur.appid),
+      set_scope_filter: { set_friend_scope: 1, set_group_scope: 0, set_channel_scope: 0 },
+      friend_scope_config: {
+        allow_others_add_friend: scope.allowFriend ? 2 : 1,
+        friend_add_scope: range === 'all' ? 2 : 1,
+      },
+    })
+    scope.friendRange = range
+    pushToast('好友添加范围已更新')
+    return true
+  } catch (e) {
+    pushToast(e.message)
+    await loadScope()
+    return false
+  }
 }
 
 function decodeNickname(value) {
@@ -1018,6 +1327,10 @@ const dev = reactive({
   webhook: '',
   ips: [],
   events: [],
+  allSubscriptions: false,
+  sensitiveUsers: [],
+  sensitiveGroups: [],
+  helperFriend: null,
   loaded: false,
 })
 const connectionDraft = reactive({
@@ -1025,28 +1338,37 @@ const connectionDraft = reactive({
   webhook: '',
   saving: false,
 })
+const webhookEditor = reactive({ visible: false, value: '' })
+const eventsSaving = ref(false)
+function openWebhookEditor() { webhookEditor.value = connectionDraft.webhook; webhookEditor.visible = true }
+async function saveWebhookEditor() {
+  if (connectionDraft.saving) return
+  connectionDraft.webhook = webhookEditor.value
+  if (await saveConnection()) webhookEditor.visible = false
+}
 const showAddTester = ref(false)
 const testerInput = ref('')
 const secretResetDialog = ref(false)
+const sensitiveDialog = reactive({ visible: false, type: 'user', value: '', saving: false })
 
 async function loadDevSettings() {
   detailLoading.value = true
   dev.appid = cur.appid
   try {
-    const r = await v2('/cgi-bin/v2/bot_dev_setting/query', { bot_appid: Number(cur.appid), filter: { ip_whitelist_info: 1, connect_info: 1 } })
+    const r = await v2('/cgi-bin/v2/bot_dev_setting/query', { bot_appid: Number(cur.appid), filter: { ip_whitelist_info: 1, connect_info: 1, event: 1, sensitive_alert: 1 } })
     const s = r.data && typeof r.data === 'object' ? r.data : r
     dev.ips = (s.ip_whitelist_info && s.ip_whitelist_info.ip_addresses) || []
+    const alerts = s.sensitive_alert_info || {}
+    dev.sensitiveUsers = (alerts.users || []).map(user => ({ uin: String(user.uin || ''), name: user.nick_name || 'QQ 用户' })).filter(user => user.uin)
+    dev.sensitiveGroups = (alerts.groups || []).map(group => ({ groupCode: String(group.group_code || ''), groupName: group.group_name || 'QQ群' })).filter(group => group.groupCode)
     const ci = s.connect_info || {}
     dev.mode = (ci.mode || 0) === 1 ? 'WebSocket' : 'Webhook'
     dev.webhook = ci.webhook_url || ''
     connectionDraft.mode = dev.mode
     connectionDraft.webhook = dev.webhook
-    const eventResult = await v2('/cgi-bin/v2/event_subscirption/list', {
-      bot_appid: Number(cur.appid),
-    })
-    const eventData = eventResult.data && typeof eventResult.data === 'object'
-      ? eventResult.data
-      : eventResult
+    const eventResult = s.event?.events ? s.event : await v2('/cgi-bin/v2/event_subscirption/list', { bot_appid: Number(cur.appid) })
+    const eventData = eventResult.data && typeof eventResult.data === 'object' ? eventResult.data : eventResult
+    dev.allSubscriptions = !!eventData.all_subscription
     dev.events = (eventData.events || []).map(event => ({
       id: event.id || '',
       name: event.name || '',
@@ -1064,8 +1386,93 @@ async function loadDevSettings() {
       name: decodeNickname(item.nick_name),
     }))
     dev.loaded = true
+    await checkBotHelper(false)
   } catch (e) { pushToast(e.message) }
   detailLoading.value = false
+}
+
+async function addBotHelper() {
+  try {
+    await v2('/cgi-bin/v2/bot_dev_setting/helper/add', {})
+    pushToast('已发送添加官方助手请求')
+    await checkBotHelper()
+  } catch (e) { pushToast(e.message) }
+}
+
+async function checkBotHelper(showToast = true) {
+  try {
+    const result = await v2('/cgi-bin/v2/bot_dev_setting/helper/check', {})
+    const data = result.data && typeof result.data === 'object' ? result.data : result
+    dev.helperFriend = !!data.is_friend
+    if (showToast) pushToast(dev.helperFriend ? '官方助手已添加' : '尚未添加官方助手')
+  } catch (e) { if (showToast) pushToast(e.message) }
+}
+
+function openSensitiveDialog(type) {
+  sensitiveDialog.type = type
+  sensitiveDialog.value = ''
+  sensitiveDialog.visible = true
+}
+
+async function addSensitiveUser() {
+  const uin = sensitiveDialog.value.trim()
+  if (!/^\d{5,11}$/.test(uin)) return pushToast('QQ 号需为 5~11 位纯数字')
+  if (dev.sensitiveUsers.length >= 20) return pushToast('敏感提醒用户最多添加 20 位')
+  if (dev.sensitiveUsers.some(user => user.uin === uin)) return pushToast('该用户已添加')
+  sensitiveDialog.saving = true
+  try {
+    await v2('/cgi-bin/v2/bot_dev_setting/sensitive_alert/user/modify', {
+      bot_appid: Number(cur.appid), action: 1, uins: [Number(uin)],
+    })
+    dev.sensitiveUsers.push({ uin, name: 'QQ 用户' })
+    sensitiveDialog.visible = false
+    pushToast('已添加提醒用户')
+  } catch (e) { pushToast(e.message) }
+  sensitiveDialog.saving = false
+}
+
+async function modifySensitiveGroup(groupCode, action, groupName = 'QQ群') {
+  if (action === 1 && dev.sensitiveGroups.length >= 20) throw new Error('敏感提醒群最多添加 20 个')
+  await v2('/cgi-bin/v2/bot_dev_setting/sensitive_alert/group/modify', {
+    bot_appid: Number(cur.appid), action, group_codes: [Number(groupCode)],
+  })
+  if (action === 1) {
+    if (!dev.sensitiveGroups.some(group => group.groupCode === String(groupCode))) {
+      dev.sensitiveGroups.push({ groupCode: String(groupCode), groupName })
+    }
+    pushToast('已添加提醒群')
+  } else {
+    dev.sensitiveGroups = dev.sensitiveGroups.filter(group => group.groupCode !== String(groupCode))
+    pushToast('已移除提醒群')
+  }
+}
+
+async function saveSensitiveDialog() {
+  if (sensitiveDialog.type === 'user') return addSensitiveUser()
+  const groupCode = sensitiveDialog.value.trim()
+  if (!/^\d{5,15}$/.test(groupCode)) return pushToast('请输入有效的群号')
+  sensitiveDialog.saving = true
+  try {
+    await modifySensitiveGroup(groupCode, 1)
+    sensitiveDialog.visible = false
+  } catch (e) { pushToast(e.message) }
+  sensitiveDialog.saving = false
+}
+
+async function removeSensitiveUser(user) {
+  if (!confirm(`确认移除提醒用户 ${user.uin}？`)) return
+  try {
+    await v2('/cgi-bin/v2/bot_dev_setting/sensitive_alert/user/modify', {
+      bot_appid: Number(cur.appid), action: 2, uins: [Number(user.uin)],
+    })
+    dev.sensitiveUsers = dev.sensitiveUsers.filter(item => item.uin !== user.uin)
+    pushToast('已移除提醒用户')
+  } catch (e) { pushToast(e.message) }
+}
+
+async function removeSensitiveGroup(group) {
+  if (!confirm(`确认移除提醒群「${group.groupName}」？`)) return
+  try { await modifySensitiveGroup(group.groupCode, 2) } catch (e) { pushToast(e.message) }
 }
 const ipInput = ref('')
 const showAddIp = ref(false)
@@ -1135,8 +1542,8 @@ function isValidWebhookUrl(url) {
   return /^https?:\/\//i.test(url)
 }
 
-async function checkWebhookUrl() {
-  const url = connectionDraft.webhook.trim()
+async function checkWebhookUrl(value = connectionDraft.webhook) {
+  const url = value.trim()
   if (!isValidWebhookUrl(url)) {
     pushToast('回调地址必须以 http:// 或 https:// 开头')
     return
@@ -1155,27 +1562,12 @@ async function checkWebhookUrl() {
   webhookCheck.checking = false
 }
 
-/* ── 平台通知 ── */
-const noti = reactive({ loading: false, list: [], error: '' })
-async function loadNotifications() {
-  noti.loading = true
-  noti.error = ''
-  try {
-    const { data } = await axios.post('/api/openapi/notifications', { user_id: UID, appid: cur.appid })
-    if (data.success === false) throw new Error(data.message || '获取通知失败')
-    noti.list = data.data?.messages || []
-  } catch (e) {
-    noti.list = []
-    noti.error = e.message === '未登录' ? '平台通知凭证已失效，请重新扫码登录' : (e.message || '获取通知失败')
-  }
-  noti.loading = false
-}
-
 async function saveConnection() {
+  if (connectionDraft.saving) return false
   if (connectionDraft.mode === 'Webhook') {
     if (!isValidWebhookUrl(connectionDraft.webhook.trim())) {
       pushToast('回调地址必须以 http:// 或 https:// 开头')
-      return
+      return false
     }
     connectionDraft.saving = true
     try {
@@ -1187,9 +1579,9 @@ async function saveConnection() {
       dev.webhook = connectionDraft.webhook.trim()
       dev.mode = 'Webhook'
       pushToast('已切换为 Webhook')
-    } catch (e) { pushToast(e.message) }
-    connectionDraft.saving = false
-    return
+      return true
+    } catch (e) { pushToast(e.message); return false }
+    finally { connectionDraft.saving = false }
   }
   connectionDraft.saving = true
   try {
@@ -1199,18 +1591,35 @@ async function saveConnection() {
     })
     dev.mode = 'WebSocket'
     pushToast('已切换为 WebSocket')
-  } catch (e) { pushToast(e.message) }
-  connectionDraft.saving = false
+    return true
+  } catch (e) { pushToast(e.message); return false }
+  finally { connectionDraft.saving = false }
 }
 
 async function saveEvents() {
+  if (eventsSaving.value || connectionDraft.saving) return
+  if (connectionDraft.mode === 'Webhook' && !isValidWebhookUrl(connectionDraft.webhook.trim())) {
+    pushToast('请先设置有效的 HTTP/HTTPS 回调地址')
+    return
+  }
+  eventsSaving.value = true
   try {
-    await v2('/cgi-bin/v2/event_subscirption/modify', {
+    const action = connectionDraft.mode === 'WebSocket' ? 3 : 1
+    await v2('/cgi-bin/v2/bot_dev_setting/connect_info/modify', {
       bot_appid: Number(cur.appid),
-      event_ids: dev.events.filter(event => event.selected).map(event => event.id),
+      action,
+      ...(action === 1 ? { webhook_url: connectionDraft.webhook.trim() } : {}),
+      filter: { event: 1 },
+      event: {
+        all_subscription: dev.allSubscriptions,
+        event_ids: dev.allSubscriptions ? [] : dev.events.filter(event => event.selected).map(event => event.id),
+      },
     })
-    pushToast(`接收事件配置已保存（共 ${dev.events.filter(event => event.selected).length} 个）`)
+    dev.mode = connectionDraft.mode
+    dev.webhook = connectionDraft.webhook.trim()
+    pushToast(dev.allSubscriptions ? '已设置接收全部事件' : `接收事件配置已保存（共 ${dev.events.filter(event => event.selected).length} 个）`)
   } catch (e) { pushToast(e.message) }
+  finally { eventsSaving.value = false }
 }
 const eventGroups = computed(() => {
   const groups = new Map()
@@ -1220,147 +1629,39 @@ const eventGroups = computed(() => {
   })
   return Array.from(groups, ([name, items]) => ({ name, items }))
 })
-const selectedEventCount = computed(() => dev.events.filter(event => event.selected).length)
+const selectedEventCount = computed(() => dev.allSubscriptions ? dev.events.length : dev.events.filter(event => event.selected).length)
 function selectAllEvents(selected) {
+  dev.allSubscriptions = false
   dev.events.forEach(event => { event.selected = selected })
 }
 
-/* ── 高级功能 ── */
-const REAL_ADVANCED_APIS = [
-  {
-    key: 'developer-list',
-    name: '关联主体列表',
-    description: '读取当前 QQ 账号可切换的全部开发者主体。',
-    method: 'GET',
-    path: '/api/v3/login/bopen/developer_list',
-    payload: () => ({}),
-  },
-  {
-    key: 'developer-profile',
-    name: '当前主体详情',
-    description: '读取当前主体、登录用户和主体权限信息。',
-    method: 'POST',
-    path: '/bopen/v2/get_audit_developer_info',
-    payload: () => ({}),
-  },
-  {
-    key: 'bot-profile',
-    name: '机器人完整信息',
-    description: '读取基础信息、隐私协议、开发者信息和在线状态。',
-    method: 'POST',
-    path: '/cgi-bin/v2/info/query',
-    payload: () => ({
-      bot_appid: Number(cur.appid),
-      filter: { base_info: 1, private_proto: 1, developer_info: 1, online_state: 1 },
-    }),
-  },
-  {
-    key: 'developer-settings',
-    name: '开发接入配置',
-    description: '读取 IP 白名单和 WebSocket/Webhook 接入方式。',
-    method: 'POST',
-    path: '/cgi-bin/v2/bot_dev_setting/query',
-    payload: () => ({
-      bot_appid: Number(cur.appid),
-      filter: { ip_whitelist_info: 1, connect_info: 1 },
-    }),
-  },
-  {
-    key: 'event-list',
-    name: '事件订阅列表',
-    description: '读取机器人支持的事件及当前订阅状态。',
-    method: 'POST',
-    path: '/cgi-bin/v2/event_subscirption/list',
-    payload: () => ({ bot_appid: Number(cur.appid) }),
-  },
-  {
-    key: 'scope-config',
-    name: '服务范围原始配置',
-    description: '读取好友、群聊、频道、白名单和搜索配置。',
-    method: 'POST',
-    path: '/cgi-bin/v2/bot_scope_manager/scope_cfg/query',
-    payload: () => ({
-      bot_appid: Number(cur.appid),
-      query_filter: { scope_config: 1, white_list: 1, search_config: 1 },
-    }),
-  },
-  {
-    key: 'data-report',
-    name: '运营数据原始响应',
-    description: '读取最近一天的全部场景消息数据。',
-    method: 'POST',
-    path: '/cgi-bin/v2/datareport/query',
-    payload: () => ({
-      bot_appid: Number(cur.appid),
-      data_range: 1,
-      data_type: 1,
-      scene_id: 1,
-    }),
-  },
-  {
-    key: 'official-avatars',
-    name: '官方头像资源',
-    description: '读取平台当前提供的官方机器人头像列表。',
-    method: 'POST',
-    path: '/cgi-bin/v2/info/official/query',
-    payload: () => ({}),
-  },
-].map(api => ({ ...api, source: 'real' }))
-const ADVANCED_APIS = [...REAL_ADVANCED_APIS, ...ADVANCED_MOCK_APIS]
-const advanced = reactive({
-  key: ADVANCED_APIS[0].key,
-  payload: JSON.stringify(ADVANCED_APIS[0].payload(), null, 2),
-  result: '',
-  loading: false,
-  error: '',
-  lastRun: '',
-})
-const advancedApi = computed(() => ADVANCED_APIS.find(item => item.key === advanced.key) || ADVANCED_APIS[0])
-
-function advancedMockContext() {
-  return {
-    accountId: status.developerId,
-    botId: cur.appid,
-    bot: { ...cur },
-    bots: bots.value.map(bot => ({ ...bot })),
-  }
-}
-
-function resetAdvancedPayload() {
-  advanced.payload = JSON.stringify(advancedApi.value.payload(advancedMockContext()), null, 2)
-  advanced.result = ''
-  advanced.error = ''
-  advanced.lastRun = ''
-}
-
-async function runAdvancedApi() {
-  if (advanced.loading) return
-  let payload
+const featurePreview = ref({})
+const showFeatureImages = ref(false)
+const featurePreviewUrl = ref('')
+const featurePreviewItems = computed(() => featurePreview.value.medias || [])
+const featurePreviewText = computed(() => ({ 1: '审核中', 2: '已通过', 3: '审核未通过' })[featurePreview.value.status] || '未提交')
+const featurePreviewClass = computed(() => ({ 1: 'reviewing', 2: 'approved', 3: 'rejected' })[featurePreview.value.status] || 'none')
+async function loadFeaturePreview() {
   try {
-    payload = JSON.parse(advanced.payload || '{}')
-  } catch (e) {
-    advanced.error = '请求参数不是有效的 JSON'
-    return
-  }
-  advanced.loading = true
-  advanced.error = ''
+    const result = await v2('/cgi-bin/v2/info/query', { bot_appid: Number(cur.appid), filter: { base_info: 1 } })
+    featurePreview.value = result.base_info?.preview_medias_info || {}
+    if (result.base_info?.online_state) cur.online = result.base_info.online_state.online_state === 1
+  } catch (e) { pushToast(e.message) }
+}
+const showAdminGroups = ref(false)
+const friendRangeDialog = reactive({ visible: false, value: 'all', saving: false })
+function openFriendRange() { friendRangeDialog.value = scope.friendRange; friendRangeDialog.visible = true }
+async function applyFriendRange() {
+  friendRangeDialog.saving = true
   try {
-    const result = advancedApi.value.source === 'mock'
-      ? await runAdvancedMock(advancedApi.value.rpc, payload, advancedMockContext())
-      : await v2(advancedApi.value.path, payload, advancedApi.value.method)
-    advanced.result = JSON.stringify(result, null, 2)
-    advanced.lastRun = new Date().toLocaleString('zh-CN', { hour12: false })
-  } catch (e) {
-    advanced.result = ''
-    advanced.error = e.message || '接口调用失败'
-  }
-  advanced.loading = false
+    if (await saveFriendRange(friendRangeDialog.value)) friendRangeDialog.visible = false
+  } finally { friendRangeDialog.saving = false }
 }
 
-async function copyAdvancedResult() {
-  if (!advanced.result) return
-  await copyText(advanced.result)
-}
+/* ── 高级设置入口 ── */
+function openFunctionConfig() { activeSub.value = 'menu-command' }
+
+function openAIServiceSettings() { activeSub.value = 'switch-service' }
 
 async function resetSecret() {
   if (isMember.value) return
@@ -1505,7 +1806,7 @@ defineExpose({ reload: loadStatus })
               <div class="current-subject-card" :data-auth-type="status.subjectType === 2 ? 'enterprise' : status.subjectType === 1 ? 'personal' : 'unverified'">
                 <span class="current-subject-mark">{{ developerMark(currentDeveloper) }}</span>
                 <span class="current-subject-text">
-                  <strong>{{ status.subjectName || '未认证主体' }}</strong>
+                  <strong>{{ displaySubjectName(status.subjectName) || '未认证主体' }}</strong>
                   <small>{{ status.subjectEmail || '暂无主体邮箱' }}</small>
                 </span>
                 <span class="current-subject-tag">{{ subjectTypeText(status.subjectType) }}</span>
@@ -1568,7 +1869,7 @@ defineExpose({ reload: loadStatus })
                 <div class="manage-title-avatar" :style="{ background: cur.avatar ? 'transparent' : cur.color }">
                   <img v-if="cur.avatar" :src="cur.avatar" alt="" /><span v-else>{{ (cur.name || 'B').charAt(0) }}</span>
                 </div>
-                <h1 class="page-title">{{ cur.name }}</h1>
+                <h1 class="page-title">{{ cur.name }}</h1><button class="bot-link-copy" type="button" aria-label="复制机器人链接" @click="copyText(botShareTarget)"><AppIcon name="copy" :size="16" /></button>
                 <button v-if="bots.length > 1" class="bot-switch-trigger" type="button" aria-label="切换机器人" title="切换机器人" @click="showBotSwitcher = true">
                   <AppIcon name="group" :size="14" />
                   <span>切换</span>
@@ -1586,6 +1887,7 @@ defineExpose({ reload: loadStatus })
                 </div>
               </div>
             </div>
+            <div class="page-actions"><button class="notify-entry" aria-label="通知中心" @click="selectSec('notifications')"><AppIcon name="bell" :size="16" />通知中心</button></div>
           </div>
 
           <div class="manage-layout">
@@ -1599,26 +1901,16 @@ defineExpose({ reload: loadStatus })
               <template v-else-if="activeSec === 'account-info'">
                 <div class="sec-group">
                   <div class="sec-group-title">基本信息</div>
-                  <div class="row editable-row" @click="openAvatarEditor">
-                    <div class="row-main"><div class="row-label">头像</div></div>
-                    <div class="row-value">
-                      <div class="row-avatar" :style="{ background: baseInfo.avatar ? 'transparent' : cur.color }">
-                        <img v-if="baseInfo.avatar" :src="baseInfo.avatar" alt="" /><span v-else>{{ (baseInfo.name || 'B').charAt(0) }}</span>
-                      </div>
-                    </div>
-                  </div>
-                  <div class="row editable-row" @click="openBotEditor('name')">
-                    <div class="row-main"><div class="row-label">昵称</div></div>
-                    <div class="row-value">{{ baseInfo.name }} <AppIcon name="chevron" :size="15" /></div>
-                  </div>
-                  <div class="row editable-row" @click="openBotEditor('desc')">
-                    <div class="row-main"><div class="row-label">简介</div></div>
-                    <div class="row-value" :class="{ 'is-placeholder': !baseInfo.desc }">{{ baseInfo.desc || '点击设置机器人简介' }} <AppIcon name="chevron" :size="15" /></div>
-                  </div>
+                  <div class="row" @click="openAvatarEditor"><div class="row-main"><div class="row-label">头像</div></div><div class="row-avatar" :style="{ background: baseInfo.avatar ? 'transparent' : cur.color }"><img v-if="baseInfo.avatar" :src="baseInfo.avatar" alt="" /><span v-else>{{ firstCharacter(baseInfo.name) }}</span></div><AppIcon name="chevron" :size="16" class="row-chev" /></div>
+                  <div class="row" @click="openBotEditor('name')"><div class="row-main"><div class="row-label">昵称</div></div><div class="row-value">{{ baseInfo.name }}</div><AppIcon name="chevron" :size="16" class="row-chev" /></div>
+                  <div class="row" @click="openBotEditor('desc')"><div class="row-main"><div class="row-label">简介</div></div><div class="row-value" :class="{ 'is-placeholder': !baseInfo.desc }">{{ baseInfo.desc || '点击设置机器人简介' }}</div><AppIcon name="chevron" :size="16" class="row-chev" /></div>
                 </div>
-                <div class="danger-actions-grid">
-                  <button v-if="!isMember" class="danger-action remove" type="button" @click="openRevokeDialog">注销机器人</button>
+                <div class="sec-group">
+                  <div class="sec-group-title">管理员信息</div>
+                  <div class="row static"><div class="row-main"><div class="row-label">管理员</div><div class="row-sub">该机器人的管理员 QQ 账号，拥有该机器人全部管理权限</div></div><div class="admin-value"><div class="admin-value-name">{{ developerInfo.adminNickName || 'QQ 管理员' }}</div><div class="admin-value-qq">QQ号：{{ developerInfo.adminUin || '—' }}</div></div></div>
+                  <div class="row" @click="showAssistantManager = true"><div class="row-main"><div class="row-label">协助者成员</div><div class="row-sub">添加或移除可协助管理该机器人的成员</div></div><div class="avatar-stack"><span v-for="member in assistantMembers.slice(0, 5)" :key="member.uin" class="avatar-stack-item"><img v-if="member.avatar" :src="member.avatar" alt="" /><span v-else>{{ firstCharacter(member.name) }}</span></span></div><AppIcon name="chevron" :size="16" class="row-chev" /></div>
                 </div>
+                <div class="danger-actions-grid"><button v-if="!isMember" class="danger-action remove" type="button" @click="openRevokeDialog">注销机器人</button></div>
               </template>
 
               <!-- 服务范围 -->
@@ -1633,7 +1925,7 @@ defineExpose({ reload: loadStatus })
                   </div>
                   <div class="row static">
                     <div class="row-main"><div class="row-label">认证主体</div></div>
-                    <div class="row-value">{{ developerInfo.subjectName || '未认证' }}{{ developerInfo.subjectType === 1 ? '（个人开发者）' : '' }}</div>
+                    <div class="row-value">{{ displaySubjectName(developerInfo.subjectName) || '未认证' }}{{ developerInfo.subjectType === 1 ? '（个人开发者）' : '' }}</div>
                   </div>
                   <div class="sec-group-title auth-title">
                     <span></span>
@@ -1670,6 +1962,7 @@ defineExpose({ reload: loadStatus })
                     </div>
                     <div class="switch" :class="{ on: scope.allowFriend, 'is-disabled': !isCertified }" @click="toggleScope('friend')"></div>
                   </div>
+                  <div v-if="scope.allowFriend" class="row" @click="openFriendRange"><div class="row-main"><div class="row-label">可添加范围</div></div><div class="row-value">{{ scope.friendRange === 'all' ? '所有人可添加' : '仅 QQ 好友可添加' }}</div><AppIcon name="chevron" :size="16" class="row-chev" /></div>
                 </div>
                 <div class="sec-group scope-card">
                   <div class="sec-group-title group-title">
@@ -1689,6 +1982,7 @@ defineExpose({ reload: loadStatus })
                     </div>
                     <div class="switch" :class="{ on: scope.allowGroup, 'is-disabled': !isCertified }" @click="toggleScope('group')"></div>
                   </div>
+                  <GroupAdminSettings :appid="cur.appid" :all="scope.allGroupSwitches" :whitelist="scope.whitelistGroupSwitches" :groups="scope.adminGroups" :request="v2" @saved="loadScope" @toast="pushToast" @manage-groups="showAdminGroups = true" />
                 </div>
                 <div class="sec-group scope-card">
                   <div class="sec-group-title channel-title">
@@ -1711,13 +2005,17 @@ defineExpose({ reload: loadStatus })
                 </div>
                 <div class="sec-group">
                   <div class="sec-group-title">隐私与安全</div>
+                  <div class="row static">
+                    <div class="row-main"><div class="row-label">允许被搜索到</div><div class="row-sub">打开后，QQ会根据机器人服务范围、服务状态等条件判断是否进入 QQ 网络搜索（综搜）的被搜范围</div></div>
+                    <button type="button" :class="['switch', { on: scope.searchable }]" role="switch" :aria-checked="scope.searchable" aria-label="允许被搜索到" @click="toggleSearchable"></button>
+                  </div>
                   <div class="row editable-row" @click="openPrivateProtocol">
                     <div class="row-main">
                       <div class="row-label">隐私协议</div>
                       <div class="row-sub">{{ privateProto.effectiveDate ? `已生效，最近一次更新于 ${privateProto.effectiveDate}` : '填写表单信息，平台将自动生成完整协议' }}</div>
                     </div>
                     <div>
-                      <span :class="['agreement-tag', privateProto.status ? 'approved' : 'none']">{{ privateProto.status ? '已提交' : '未提交' }}</span>
+                      <span :class="['agreement-tag', privateProto.status ? 'approved' : 'none']">{{ ({ 1: '审核中', 2: '已通过', 3: '审核未通过' })[privateProto.status] || '未提交' }}</span>
                       <AppIcon name="chevron" :size="15" class="row-chev" />
                     </div>
                   </div>
@@ -1804,74 +2102,18 @@ defineExpose({ reload: loadStatus })
 
               <!-- 平台通知 -->
               <template v-else-if="activeSec === 'notifications'">
-                <div class="sec-group">
-                  <div class="sec-group-head">
-                    <div><div class="sec-group-title">平台通知</div></div>
-                    <button class="sec-group-action" type="button" :disabled="noti.loading" @click="loadNotifications">{{ noti.loading ? '加载中...' : '刷新' }}</button>
-                  </div>
-                  <div class="sec-group-desc">来自 QQ 开放平台的官方通知（审核、公告、运营提醒等）。</div>
-                  <div v-if="noti.loading" class="report-empty">加载中...</div>
-                  <div v-else-if="noti.error" class="report-empty">{{ noti.error }}</div>
-                  <div v-else-if="!noti.list.length" class="report-empty">暂无通知</div>
-                  <div v-else class="noti-list">
-                    <div v-for="(n, i) in noti.list" :key="i" class="noti-item">
-                      <div class="noti-title">{{ n.title || '通知' }}</div>
-                      <div class="noti-content">{{ n.content }}</div>
-                      <div class="noti-time">{{ n.send_time }}</div>
-                    </div>
-                  </div>
-                </div>
+                <NotifyCenter :developer-id="status.developerId" :request="v2" @toast="pushToast" />
               </template>
 
-              <!-- 高级功能 -->
+              <!-- 高级设置 -->
               <template v-else-if="activeSec === 'advanced'">
-                <div class="advanced-intro">
-                  <div>
-                    <span class="advanced-eyebrow">实验性能力</span>
-                    <h2>高级接口调试</h2>
-                    <p>调用已确认的真实只读接口，或运行官方源码中的本地 Mock 方法。</p>
-                  </div>
-                  <AppIcon name="code" :size="34" />
-                </div>
-                <div class="sec-group advanced-console">
-                  <div class="advanced-console-head">
-                    <label>
-                      <span>接口能力</span>
-                      <select v-model="advanced.key" @change="resetAdvancedPayload">
-                        <optgroup label="真实接口">
-                          <option v-for="api in REAL_ADVANCED_APIS" :key="api.key" :value="api.key">{{ api.name }}</option>
-                        </optgroup>
-                        <optgroup label="官方源码 Mock（本地模拟）">
-                          <option v-for="api in ADVANCED_MOCK_APIS" :key="api.key" :value="api.key">{{ api.name }}</option>
-                        </optgroup>
-                      </select>
-                    </label>
-                    <span :class="['advanced-method', { mock: advancedApi.source === 'mock' }]">{{ advancedApi.method }}</span>
-                  </div>
-                  <div class="advanced-path">{{ advancedApi.path }}</div>
-                  <p class="advanced-description">{{ advancedApi.description }}</p>
-                  <div v-if="advancedApi.source === 'mock'" class="advanced-mock-warning">
-                    该方法仅在当前网页内存中模拟，不会请求或修改 QQ 服务端数据，刷新页面后状态重置。
-                  </div>
-                  <label class="advanced-payload">
-                    <span>请求参数</span>
-                    <textarea v-model="advanced.payload" rows="9" spellcheck="false"></textarea>
-                  </label>
-                  <div class="advanced-actions">
-                    <span v-if="advanced.lastRun">最后调用：{{ advanced.lastRun }}</span>
-                    <button class="btn primary" type="button" :disabled="advanced.loading" @click="runAdvancedApi">
-                      {{ advanced.loading ? '调用中...' : advancedApi.source === 'mock' ? '运行 Mock' : '调用接口' }}
-                    </button>
-                  </div>
-                </div>
-                <div v-if="advanced.error || advanced.result" class="sec-group advanced-response">
-                  <div class="advanced-response-head">
-                    <div class="sec-group-title">原始响应</div>
-                    <button v-if="advanced.result" class="sec-group-action" type="button" @click="copyAdvancedResult"><AppIcon name="copy" :size="14" /> 复制 JSON</button>
-                  </div>
-                  <div v-if="advanced.error" class="advanced-error">{{ advanced.error }}</div>
-                  <pre v-else>{{ advanced.result }}</pre>
-                </div>
+                <MenuCommandSettings v-if="activeSub === 'menu-command'" :appid="cur.appid" :request="v2" @back="activeSub = ''" @toast="pushToast" />
+                <ServiceGuide v-else-if="activeSub === 'switch-service'" :appid="cur.appid" :secret="dev.secretShown ? dev.secret : ''" @back="activeSub = ''" @reset-secret="secretResetDialog = true" @toast="pushToast" />
+                <template v-else>
+                  <div class="sec-group"><div class="sec-group-title">连接 AI 服务</div><div class="row" @click="openAIServiceSettings"><div class="row-main"><div class="row-label">设置机器人服务</div><div class="row-sub">可连接到你已有的 AI 服务，通过 QQ 机器人控制 AI “干活”</div></div><div :class="['conn-status', { 'is-online': cur.online }]"><span class="conn-status-dot"></span><span class="conn-status-text">{{ cur.online ? '已连接' : '未连接' }}</span></div><span class="row-value ua-list">{{ cur.online ? `${dev.mode}连接` : '' }}</span><AppIcon name="chevron" :size="16" class="row-chev" /></div></div>
+                  <div class="sec-group"><div class="sec-group-title">菜单与指令</div><div class="row" @click="openFunctionConfig"><div class="row-main"><div class="row-label">配置机器人菜单与指令服务</div><div class="row-sub">为好友和群聊设置可视化菜单、快捷指令与跳转服务</div></div><span class="row-value">去配置</span><AppIcon name="chevron" :size="16" class="row-chev" /></div></div>
+                  <div class="sec-group"><div class="sec-group-title">功能介绍图</div><div class="row" @click="showFeatureImages = true"><div class="row-main"><div class="row-label">功能介绍图</div><div v-if="!featurePreviewItems.length" class="row-sub">最多支持上传 5 张，展示在机器人的资料页上</div></div><span :class="['fi-status-tag', featurePreviewClass]">{{ featurePreviewText }}</span><AppIcon name="chevron" :size="16" class="row-chev" /></div><div v-if="featurePreviewItems.length" class="feature-images-inline"><div class="fi-inline-list"><div v-for="(item, index) in featurePreviewItems" :key="item.url" class="fi-inline-item"><div class="fi-inline-thumb"><img :src="item.url" :alt="`功能介绍图 ${index + 1}`" @click="featurePreviewUrl = item.url" /><span class="fi-inline-index">{{ index + 1 }}</span></div></div></div></div></div>
+                </template>
               </template>
 
               <!-- 开发设置 -->
@@ -1901,7 +2143,7 @@ defineExpose({ reload: loadStatus })
                   <div class="row editable-row" @click="openConnectionSettings">
                     <div class="row-main">
                       <div class="row-label">事件订阅与回调地址</div>
-                      <div class="row-sub">当前以 {{ dev.mode }} 方式接收事件推送</div>
+                      <div class="row-sub">配置机器人事件推送与服务端回调地址</div>
                     </div>
                     <div class="row-value link">{{ dev.mode }} <AppIcon name="chevron" :size="15" /></div>
                   </div>
@@ -1948,59 +2190,48 @@ defineExpose({ reload: loadStatus })
                   </ul>
                   </div>
                 </div>
+                <div class="sec-group sensitive-alert-config">
+                  <div class="sec-group-head">
+                    <div class="sec-group-title">敏感权限告警设置</div>
+                  </div>
+                  <p class="sec-group-desc">该告警用于提醒敏感接口的异常调用。请先 <button class="panel-sub-link" :disabled="dev.helperFriend" @click="addBotHelper">{{ dev.helperFriend ? '已添加QQ机器人开放平台小助手' : '添加QQ机器人开放平台小助手' }}</button><span :class="['assistant-qr-trigger', { 'is-open': showHelperQR }]"><button class="assistant-qr-button" aria-label="查看小助手二维码" :aria-expanded="showHelperQR" @click="showHelperQR = !showHelperQR"><AppIcon name="qr" :size="14" /></button><span class="connect-profile-qr-pop"><span class="create-friend-qr-img"><img :src="HELPER_QR_URL" alt="QQ机器人开放平台小助手二维码" /></span></span></span> 以接收通知消息。如已添加，不用重复操作。</p>
+                  <div class="sensitive-alert-grid">
+                    <div class="sensitive-alert-column">
+                      <div class="dev-tester-block-head"><div class="dev-tester-label">允许接收告警的用户 <span class="dev-tester-count">{{ dev.sensitiveUsers.length }} / 20</span></div><button class="sec-group-action" type="button" @click="openSensitiveDialog('user')"><AppIcon name="plus" :size="14" /> 添加用户</button></div>
+                      <div v-if="!dev.sensitiveUsers.length" class="dev-tester-empty">尚未设置</div>
+                      <ul v-else class="ip-whitelist-list"><li v-for="user in dev.sensitiveUsers" :key="user.uin" class="ip-whitelist-item"><span>{{ user.name }} <span class="mono">{{ user.uin }}</span></span><button class="btn ghost sm" type="button" @click="removeSensitiveUser(user)">删除</button></li></ul>
+                    </div>
+                    <div class="sensitive-alert-column">
+                      <div class="dev-tester-block-head"><div class="dev-tester-label">允许接收告警的群聊 <span class="dev-tester-count">{{ dev.sensitiveGroups.length }} / 20</span></div><button class="sec-group-action" type="button" @click="openGroupPicker('alert')"><AppIcon name="plus" :size="14" /> 添加群聊</button></div>
+                      <div v-if="!dev.sensitiveGroups.length" class="dev-tester-empty">尚未设置</div>
+                      <ul v-else class="ip-whitelist-list"><li v-for="group in dev.sensitiveGroups" :key="group.groupCode" class="ip-whitelist-item"><span>{{ group.groupName }} <span class="mono">{{ group.groupCode }}</span></span><button class="btn ghost sm" type="button" @click="removeSensitiveGroup(group)">删除</button></li></ul>
+                    </div>
+                  </div>
+                </div>
                 </template>
                 <template v-else>
-                  <button class="panel-breadcrumb" type="button" @click="activeSub = ''">
-                    <AppIcon name="back" :size="15" /> 开发设置 <span>/ 事件订阅与回调</span>
-                  </button>
-                  <div class="sec-group event-config">
-                    <div class="event-config-title">接入方式 <span>（当前为：{{ dev.mode }}）</span></div>
-                    <p class="sec-group-desc">提示：切换后立刻生效，请谨慎操作，避免影响在线服务。原创机器人开发者请阅读开发者文档：<a href="https://bot.q.qq.com/wiki/develop/api-v2/dev-prepare/interface-framework/event-emit.html" target="_blank" rel="noopener noreferrer">事件订阅与通知</a></p>
-                    <div class="event-channel-grid">
-                      <button :class="['event-channel-card', { active: connectionDraft.mode === 'WebSocket' }]" type="button" @click="connectionDraft.mode = 'WebSocket'">
-                        <AppIcon name="robot" :size="23" />
-                        <span><b>WebSocket</b><small>不依赖公网服务器部署，适合个人单机使用，需维护长连接状态</small></span>
-                        <i>✓</i>
-                      </button>
-                      <button :class="['event-channel-card', { active: connectionDraft.mode === 'Webhook' }]" type="button" @click="connectionDraft.mode = 'Webhook'">
-                        <AppIcon name="external" :size="23" />
-                        <span><b>Webhook</b><small>事件推送至你配置的 HTTP/HTTPS 服务上，适合提供公开服务的机器人使用，运维更可靠</small></span>
-                        <i>✓</i>
-                      </button>
+                  <nav class="breadcrumb-bar" aria-label="面包屑导航"><button class="breadcrumb-parent" aria-label="返回开发设置" @click="activeSub = ''"><AppIcon name="back" :size="14" />开发设置</button><span class="breadcrumb-sep">/</span><span class="breadcrumb-current">事件订阅与回调</span></nav>
+                  <div class="sec-group">
+                    <div class="sec-group-head"><div class="sec-group-title">接入方式 <span class="ec-channel-current">(当前为：{{ dev.mode }})</span></div></div>
+                    <p class="sec-group-desc">提示：切换后立刻生效，请谨慎操作，避免影响在线服务。原创机器人开发者请阅读开发者文档：<a class="panel-sub-link" href="https://bot.q.qq.com/wiki/develop/api-v2/dev-prepare/interface-framework/event-emit.html" target="_blank" rel="noopener noreferrer">事件订阅与通知</a></p>
+                    <div class="ec-channel-cards">
+                      <button :class="['ec-channel-card', { active: connectionDraft.mode === 'WebSocket' }]" type="button" :disabled="connectionDraft.saving || eventsSaving" @click="connectionDraft.mode = 'WebSocket'"><span class="ec-channel-icon"><AppIcon name="computer" :size="22" /></span><span class="ec-channel-text"><b class="ec-channel-title">WebSocket</b><small class="ec-channel-desc">不依赖公网服务器部署，适合个人单机使用，需维护长连接状态</small></span><span class="ec-channel-check">✓</span></button>
+                      <button :class="['ec-channel-card', { active: connectionDraft.mode === 'Webhook' }]" type="button" :disabled="connectionDraft.saving || eventsSaving" @click="connectionDraft.mode = 'Webhook'"><span class="ec-channel-icon"><AppIcon name="cloud" :size="22" /></span><span class="ec-channel-text"><b class="ec-channel-title">Webhook</b><small class="ec-channel-desc">事件推送至你配置的 HTTP/HTTPS 服务上，适合提供公开服务的机器人使用，运维更可靠</small></span><span class="ec-channel-check">✓</span></button>
                     </div>
-                    <div v-if="connectionDraft.mode === 'WebSocket'" class="event-note">
-                      <AppIcon name="info" :size="15" /> 如果你是想用于连接 OpenClaw 等类似的 AI Agent 服务，在服务提供方没有明确说明和指引的前提下，选用 WebSocket 即可。
-                    </div>
-                    <div v-else class="event-webhook-field">
-                      <span>回调地址（HTTP/HTTPS 地址）</span>
-                      <div class="webhook-input-row">
-                        <input v-model="connectionDraft.webhook" type="url" placeholder="设置回调地址并切换至 Webhook 接入" />
-                        <button v-if="webhookSuggest.available" class="btn ghost sm" type="button" title="填入本机回调地址" @click="fillSuggestedWebhook">自动填写</button>
-                        <button class="btn sm" type="button" :disabled="webhookCheck.checking || !connectionDraft.webhook.trim()" @click="checkWebhookUrl">{{ webhookCheck.checking ? '校验中...' : '校验地址' }}</button>
-                      </div>
-                      <small v-if="webhookCheck.msg" :class="['webhook-check-msg', webhookCheck.ok ? 'ok' : 'fail']">{{ webhookCheck.ok ? '✓ ' : '✗ ' }}{{ webhookCheck.msg }}</small>
-                      <small>回调地址需公开可访问，修改地址时平台会校验返回签名，可查阅开发者文档了解签名算法</small>
-                    </div>
-                    <div class="event-save-mode"><button class="btn primary" type="button" :disabled="connectionDraft.saving" @click="saveConnection">{{ connectionDraft.saving ? '保存中...' : `切换为 ${connectionDraft.mode}` }}</button></div>
+                    <div v-if="connectionDraft.mode === 'WebSocket'" class="ec-tip-block"><AppIcon name="info" :size="14" /><span>如果你是想用于连接 OpenClaw 等类似的 AI Agent 服务，在 AI 服务提供方没有明确说明和指引的前提下，选用 WebSocket 即可。</span></div>
+                    <div v-else class="ec-channel-extra"><div class="ec-field-card"><div class="ec-field-label">回调地址（HTTP/HTTPS 地址）</div><div class="ec-field-value-row"><code class="ec-field-mono ec-editable" role="button" tabindex="0" @click="openWebhookEditor" @keydown.enter="openWebhookEditor">{{ connectionDraft.webhook || '设置回调地址并切换至 Webhook 接入' }}</code><button class="ec-icon-btn" aria-label="修改回调地址" @click="openWebhookEditor"><AppIcon name="edit" :size="14" /></button><button class="ec-icon-btn" aria-label="复制回调地址" @click="copyText(connectionDraft.webhook)"><AppIcon name="copy" :size="14" /></button></div><div class="ec-field-tip">回调地址需公开可访问，修改地址时平台会校验返回签名，可查阅开发者文档了解签名算法</div></div></div>
+                    <div v-if="connectionDraft.mode !== dev.mode" class="ec-channel-foot"><button class="btn primary" type="button" :disabled="connectionDraft.saving || eventsSaving" @click="saveConnection">{{ connectionDraft.saving ? '保存中…' : `切换为 ${connectionDraft.mode}` }}</button></div>
                   </div>
-                  <div v-if="connectionDraft.mode === 'Webhook'" class="sec-group event-config">
-                    <div class="event-config-head">
-                      <div class="event-config-title">接收的事件 <span>{{ selectedEventCount }} / {{ dev.events.length }}</span></div>
-                      <div><button class="event-quick-btn" type="button" @click="selectAllEvents(true)">全选</button><button class="event-quick-btn" type="button" @click="selectAllEvents(false)">全部取消</button></div>
-                    </div>
-                    <p class="sec-group-desc">只有勾选的事件才会触发回调推送，开发者可按需选择。</p>
-                    <div v-if="eventGroups.length" class="event-groups">
-                      <section v-for="group in eventGroups" :key="group.name">
-                        <h4>{{ group.name }}</h4>
-                        <label v-for="event in group.items" :key="event.id" class="event-item">
-                          <input v-model="event.selected" type="checkbox" />
-                          <span><b>{{ event.name }}</b><small>{{ event.description }}</small></span>
-                          <code>{{ event.id }}</code>
-                        </label>
-                      </section>
-                    </div>
-                    <div v-else class="report-empty">暂无可订阅事件</div>
-                    <div class="event-save-mode"><button class="btn primary" type="button" @click="saveEvents">保存接收事件</button></div>
+                  <div v-if="connectionDraft.mode === 'Webhook'" class="sec-group">
+                    <div class="sec-group-head"><div class="sec-group-title">接收事件配置</div></div>
+                    <p class="sec-group-desc">选择 Webhook 事件的接收模式：全部接收无需维护事件列表；部分接收可按需勾选，减少不必要的网络开销。</p>
+                    <div class="ec-channel-cards"><button v-for="mode in [{ all: true, title: '全部接收', desc: '接收所有事件类型，无需逐个勾选' }, { all: false, title: '部分接收', desc: '仅接收下方勾选的事件类型' }]" :key="String(mode.all)" :class="['ec-channel-card', { active: dev.allSubscriptions === mode.all }]" :disabled="eventsSaving" @click="dev.allSubscriptions = mode.all"><span class="ec-channel-text"><b class="ec-channel-title">{{ mode.title }}</b><small class="ec-channel-desc">{{ mode.desc }}</small></span><span class="ec-channel-check">✓</span></button></div>
+                    <template v-if="!dev.allSubscriptions">
+                      <div class="sec-group-head ec-events-subhead"><div class="sec-group-title">选择要接收的事件 <span class="ec-events-count">{{ selectedEventCount }} / {{ dev.events.length }}</span></div><div class="ec-events-quick"><button class="ec-quick-btn" type="button" :disabled="eventsSaving" @click="selectAllEvents(true)">全选</button><button class="ec-quick-btn" type="button" :disabled="eventsSaving" @click="selectAllEvents(false)">全部取消</button></div></div>
+                      <div v-if="eventGroups.length" class="ec-events-tabs"><section v-for="group in eventGroups" :key="group.name" class="ec-event-section"><div class="ec-event-section-title">{{ group.name }}</div><div class="ec-event-list"><label v-for="event in group.items" :key="event.id" class="ec-event-item"><input v-model="event.selected" type="checkbox" :disabled="eventsSaving" /><span class="ec-event-text"><b class="ec-event-name">{{ event.name }}</b><small class="ec-event-desc">{{ event.description }}</small></span><code class="ec-event-key">{{ event.id }}</code></label></div></section></div>
+                      <div v-else class="ec-events-empty">暂无可订阅事件</div>
+                    </template>
+                    <div class="ec-events-foot"><button class="btn primary" type="button" :disabled="eventsSaving || connectionDraft.saving" @click="saveEvents">{{ eventsSaving ? '保存中…' : '保存接收事件' }}</button></div>
                   </div>
                 </template>
               </template>
@@ -2009,6 +2240,13 @@ defineExpose({ reload: loadStatus })
         </div>
       </main>
     </div>
+
+    <FeatureImages v-if="showFeatureImages" :appid="cur.appid" :info="featurePreview" :request="v2" @close="showFeatureImages = false" @saved="loadFeaturePreview" @toast="pushToast" />
+    <div v-if="webhookEditor.visible" class="v2-qr-overlay" @click.self="!connectionDraft.saving && (webhookEditor.visible = false)"><form class="form-modal" role="dialog" aria-modal="true" aria-label="设置回调地址" @submit.prevent="saveWebhookEditor"><h3>设置回调地址</h3><p class="modal-desc">需使用公网可访问的 HTTP/HTTPS 地址</p><label class="create-field"><span>回调地址</span><input v-model="webhookEditor.value" type="url" required placeholder="http://your-domain.com/qq/callback" /></label><div class="webhook-editor-tools"><button v-if="webhookSuggest.available" class="btn ghost sm" type="button" @click="webhookEditor.value = webhookSuggest.url">自动填写本机地址</button><button class="btn ghost sm" type="button" :disabled="webhookCheck.checking" @click="checkWebhookUrl(webhookEditor.value)">{{ webhookCheck.checking ? '校验中…' : '校验地址' }}</button></div><p v-if="webhookCheck.msg" :class="['webhook-check-msg', webhookCheck.ok ? 'ok' : 'fail']">{{ webhookCheck.msg }}</p><div class="create-actions"><button class="btn" type="button" :disabled="connectionDraft.saving" @click="webhookEditor.visible = false">取消</button><button class="btn primary" type="submit" :disabled="connectionDraft.saving">{{ connectionDraft.saving ? '保存中…' : '确定' }}</button></div></form></div>
+    <div v-if="featurePreviewUrl" class="fi-lightbox" @click="featurePreviewUrl = ''"><img :src="featurePreviewUrl" alt="功能介绍图预览" /></div>
+    <div v-if="friendRangeDialog.visible" class="modal-root"><div class="modal-mask" @click="!friendRangeDialog.saving && (friendRangeDialog.visible = false)"></div><section class="modal friend-range-modal" role="dialog" aria-modal="true" aria-label="可添加范围"><button class="support-close" aria-label="关闭" @click="friendRangeDialog.visible = false"><AppIcon name="close" :size="16" /></button><div class="am-head"><h3>可添加范围</h3><p>选择允许添加机器人为好友的用户范围</p></div><div class="ai-body"><label v-for="item in [{ value: 'all', title: '所有人可添加' }, { value: 'friend', title: '仅 QQ 好友可添加' }]" :key="item.value" :class="['friend-range-option', { active: friendRangeDialog.value === item.value }]"><input v-model="friendRangeDialog.value" type="radio" :value="item.value" />{{ item.title }}</label></div><div class="am-foot"><button class="btn" :disabled="friendRangeDialog.saving" @click="friendRangeDialog.visible = false">取消</button><button class="btn primary" :disabled="friendRangeDialog.saving" @click="applyFriendRange">保存</button></div></section></div>
+    <div v-if="showAdminGroups" class="modal-root"><div class="modal-mask" @click="showAdminGroups = false"></div><section class="modal group-admin-card__modal" role="dialog" aria-modal="true" aria-label="管理白名单群"><div class="group-admin-card__modal-head"><div><h3 class="group-admin-card__modal-title">管理白名单群</h3><p class="group-admin-card__modal-sub">为白名单群聊单独设置机器人管理能力</p></div><button class="group-admin-card__close" aria-label="关闭" @click="showAdminGroups = false"><AppIcon name="close" :size="16" /></button></div><div class="group-admin-card__modal-body"><div class="group-admin-card__whitelist-head"><span>已添加 {{ scope.adminGroups.length }} / 20 个群</span><button class="group-admin-card__add-button" :disabled="scope.adminGroups.length >= 20" @click="openGroupPicker('admin')"><AppIcon name="plus" :size="14" />添加群聊</button></div><div v-if="!scope.adminGroups.length" class="group-admin-card__whitelist-empty">暂无白名单群聊</div><div v-else class="group-admin-card__whitelist-list"><div v-for="group in scope.adminGroups" :key="group.id" class="group-admin-card__whitelist-item"><div class="group-admin-card__whitelist-info"><strong>{{ group.name }}</strong><small>{{ group.id }}</small></div><button class="group-admin-card__remove-button" @click="removeAdminGroup(group)">移除</button></div></div></div><div class="group-admin-card__modal-foot"><button class="btn" @click="showAdminGroups = false">关闭</button></div></section></div>
+    <div v-if="showAssistantManager" class="modal-root"><div class="modal-mask" @click="showAssistantManager = false"></div><section class="modal assistant-manager-modal" role="dialog" aria-modal="true" aria-label="协作者成员"><button class="support-close" aria-label="关闭" @click="showAssistantManager = false"><AppIcon name="close" :size="16" /></button><div class="am-head"><h3>协作者成员</h3><p>添加协作者协助管理该机器人；对方确认接受后才正式加入。可分配「开发」「运营」权限。</p></div><div class="am-body"><div v-if="assistantState.loading" class="am-empty">加载中…</div><div v-else-if="assistantState.error" class="am-empty">{{ assistantState.error }}<button class="btn ghost" @click="loadAssistantMembers">重试</button></div><div v-else-if="!assistantMembers.length" class="am-empty">暂无协作者</div><div v-for="member in assistantMembers" :key="member.uin" class="am-card"><img v-if="member.avatar" class="am-avatar" :src="member.avatar" alt="" /><div v-else class="am-avatar-letter">{{ firstCharacter(member.name) }}</div><div class="am-main"><div class="am-name-row"><span class="am-name">{{ member.name }}</span></div><div class="am-qq">QQ号：{{ member.uin }}</div><div class="am-role-row"><span v-for="role in member.roles" :key="role" class="am-role-tag">{{ role === 'dev' ? '开发' : '运营' }}</span></div></div><div v-if="!isMember" class="am-actions"><button class="btn small" @click="openAssistantRoleDialog(member)">修改权限</button><button class="btn small" @click="removeAssistant(member)">移除</button></div></div></div><div class="am-foot"><button class="btn" @click="showAssistantManager = false">关闭</button><button v-if="!isMember" class="btn primary" @click="openAssistantDialog">添加协作者</button></div></section></div>
 
     <!-- 机器人切换 -->
     <div v-if="showBotSwitcher" class="v2-qr-overlay" @click.self="showBotSwitcher = false">
@@ -2056,7 +2294,7 @@ defineExpose({ reload: loadStatus })
           >
             <span class="developer-picker-mark">{{ developerMark(developer) }}</span>
             <span class="developer-picker-info">
-              <strong>{{ developer.name }}</strong>
+              <strong>{{ displaySubjectName(developer.name) || '未认证主体' }}</strong>
               <small>{{ developer.email || '暂无主体邮箱' }}</small>
             </span>
             <span class="developer-picker-type">{{ subjectTypeText(developer.subjectType) }}</span>
@@ -2106,46 +2344,25 @@ defineExpose({ reload: loadStatus })
     </div>
 
     <!-- 编辑基础信息 -->
-    <div v-if="editor.visible" class="v2-qr-overlay" @click.self="editor.visible = false">
-      <div class="form-modal">
-        <div class="v2-qr-title">设置机器人{{ editor.field === 'name' ? '昵称' : '简介' }}</div>
-        <div class="v2-qr-desc">{{ editor.field === 'name' ? '昵称将展示在 QQ 会话与机器人资料中' : '简洁说明机器人的主要能力和服务内容' }}</div>
-        <label class="create-field">
-          <span>{{ editor.field === 'name' ? '机器人昵称' : '机器人简介' }}</span>
-          <input v-if="editor.field === 'name'" v-model="editor.value" maxlength="20" placeholder="请输入机器人昵称" />
-          <textarea v-else v-model="editor.value" maxlength="100" rows="4" placeholder="请输入机器人简介"></textarea>
-          <small>{{ editor.value.length }} / {{ editor.field === 'name' ? 20 : 100 }}</small>
-        </label>
-        <div class="create-actions">
-          <button class="btn ghost" type="button" @click="editor.visible = false">取消</button>
-          <button class="btn primary" type="button" :disabled="editor.loading || (editor.field === 'name' && !editor.value.trim())" @click="submitBotEditor">{{ editor.loading ? '保存中...' : '保存' }}</button>
-        </div>
-      </div>
+    <div v-if="editor.visible" class="modal-root">
+      <div class="modal-mask" @click="!editor.loading && (editor.visible = false)"></div>
+      <form class="modal editor-modal" role="dialog" aria-modal="true" :aria-label="`设置机器人${editor.field === 'name' ? '昵称' : '简介'}`" @submit.prevent="submitBotEditor">
+        <div class="editor-head"><h3>设置机器人{{ editor.field === 'name' ? '昵称' : '简介' }}</h3><p>{{ editor.field === 'name' ? '昵称将公开展示于 QQ 内，请合理规范使用' : '简介将公开展示于 QQ 内，请简要介绍机器人的功能' }}</p></div>
+        <div class="editor-body"><div class="editor-field-wrap"><input v-if="editor.field === 'name'" ref="editorInput" v-model="editor.value" class="editor-input" maxlength="20" placeholder="请输入机器人昵称" /><textarea v-else ref="editorInput" v-model="editor.value" class="editor-input editor-textarea" maxlength="100" rows="4" placeholder="请输入机器人简介"></textarea><div :class="['editor-count', { 'is-limit': editor.value.length >= (editor.field === 'name' ? 20 : 100) }]">{{ editor.value.length }} / {{ editor.field === 'name' ? 20 : 100 }}</div></div></div>
+        <div class="modal-foot"><button class="btn large" type="button" :disabled="editor.loading" @click="editor.visible = false">取消</button><button class="btn primary large" type="submit" :disabled="editor.loading || (editor.field === 'name' && !editor.value.trim())">{{ editor.loading ? '保存中…' : '确认' }}</button></div>
+      </form>
     </div>
 
     <!-- 头像选择 -->
-    <div v-if="showAvatarPicker" class="v2-qr-overlay" @click.self="closeAvatarEditor">
-      <div class="form-modal">
-        <div class="v2-qr-title">设置机器人头像</div>
-        <div class="v2-qr-desc">使用官方推荐或上传自定义头像</div>
-        <div v-if="officialAvatars.length" class="avatar-picker-grid">
-          <button v-for="avatar in officialAvatars" :key="avatar.id" type="button" :class="['avatar-option', { active: selectedAvatarId === avatar.id }]" @click="selectOfficialAvatar(avatar)"><img :src="avatar.url" alt="" /></button>
-        </div>
-        <div v-else class="report-empty">暂无可用头像</div>
-        <div v-if="customAvatarUrl" class="custom-avatar-preview">
-          <img :src="customAvatarUrl" alt="自定义头像预览" />
-          <span>自定义头像</span>
-        </div>
-        <div class="avatar-upload-row">
-          <input ref="avatarFileInput" class="avatar-file-input" type="file" accept="image/*" @change="selectCustomAvatar" />
-          <button class="btn ghost" type="button" :disabled="avatarSaving" @click="avatarFileInput?.click()">上传自定义头像</button>
-          <small>图片小于 2MB，可拖动和缩放裁剪</small>
-        </div>
-        <div class="create-actions">
-          <button class="btn ghost" type="button" @click="closeAvatarEditor">取消</button>
-          <button class="btn primary" type="button" :disabled="avatarSaving || (!selectedAvatarId && !customAvatarFile)" @click="submitAvatar">{{ avatarSaving ? '保存中...' : '保存' }}</button>
-        </div>
-      </div>
+    <div v-if="showAvatarPicker" class="modal-root">
+      <div class="modal-mask" @click="!avatarSaving && closeAvatarEditor()"></div>
+      <section class="modal avatar-picker-modal" role="dialog" aria-modal="true" aria-label="设置机器人头像">
+        <button class="apm-close" aria-label="关闭" :disabled="avatarSaving" @click="closeAvatarEditor"><AppIcon name="close" :size="16" /></button>
+        <div class="modal-header"><h3>设置机器人头像</h3><p>使用官方推荐或者自定义上传</p></div>
+        <div class="avatar-picker-body"><div v-if="officialAvatars.length" class="avatar-picker-grid"><button v-for="avatar in officialAvatars" :key="avatar.id" type="button" :class="['avatar-option', { active: selectedAvatarId === avatar.id }]" @click="selectOfficialAvatar(avatar)"><img :src="avatar.url" alt="" /></button></div><div v-else class="report-empty">暂无可用头像</div><div v-if="customAvatarUrl" class="custom-avatar-preview"><img :src="customAvatarUrl" alt="自定义头像预览" /><span>自定义头像</span></div></div>
+        <input ref="avatarFileInput" class="avatar-file-input" type="file" accept="image/*" @change="selectCustomAvatar" />
+        <div class="modal-foot"><button class="btn large" type="button" :disabled="avatarSaving" @click="avatarFileInput?.click()">上传自定义头像</button><button class="btn primary large" type="button" :disabled="avatarSaving || (!selectedAvatarId && !customAvatarFile)" @click="submitAvatar">{{ avatarSaving ? '保存中…' : '确定' }}</button></div>
+      </section>
     </div>
 
     <!-- 自定义头像裁剪 -->
@@ -2197,7 +2414,7 @@ defineExpose({ reload: loadStatus })
           </label>
           <div class="privacy-preview">
             <b>协议预览</b>
-            <p>本机器人由 {{ developerInfo.subjectName || '当前开发者主体' }} 提供服务。用户可通过上述邮箱联系开发者，申请查询、更正或删除与机器人服务相关的信息。</p>
+            <p>本机器人由 {{ displaySubjectName(developerInfo.subjectName) || '当前开发者主体' }} 提供服务。用户可通过上述邮箱联系开发者，申请查询、更正或删除与机器人服务相关的信息。</p>
           </div>
           <div class="create-actions">
             <button class="btn ghost" type="button" @click="privacyDialog.visible = false">取消</button>
@@ -2247,6 +2464,46 @@ defineExpose({ reload: loadStatus })
       </div>
     </div>
 
+    <!-- 协助者成员 -->
+    <div v-if="assistantDialog.visible" class="modal-root"><div class="modal-mask" @click="!assistantDialog.saving && (assistantDialog.visible = false)"></div><section class="modal assistant-invite-modal" role="dialog" aria-modal="true" aria-label="添加协作者"><button class="support-close" aria-label="关闭" :disabled="assistantDialog.saving" @click="assistantDialog.visible = false"><AppIcon name="close" :size="16" /></button><div class="ai-head"><h3>添加协作者</h3><p>添加协作者协助管理该机器人；可分配「开发」「运营」权限。</p></div><div class="ai-body"><label class="ai-field"><span class="ai-label">协作者 QQ 号</span><input v-model="assistantDialog.uin" class="ai-input" inputmode="numeric" maxlength="12" placeholder="请输入对方 QQ 号" /></label><label class="ai-field"><span class="ai-label">备注名称（选填）</span><input v-model="assistantDialog.note" class="ai-input" maxlength="20" placeholder="便于识别的备注名" /></label><div class="ai-field"><div class="ai-label">权限</div><div class="ai-role-grid"><label v-for="role in [{ key: 'dev', title: '开发', sub: '接入、调试与开发配置' }, { key: 'ops', title: '运营', sub: '数据管理与运营配置' }]" :key="role.key" :class="['ai-role-card', { 'is-checked': assistantDialog.roles.includes(role.key) }]"><input v-model="assistantDialog.roles" class="ai-role-checkbox" type="checkbox" :value="role.key" /><span class="ai-role-main"><span class="ai-role-title">{{ role.title }}</span><span class="ai-role-desc">{{ role.sub }}</span></span></label></div><p class="ai-hint">至少选择一项权限。</p></div></div><div class="ai-foot"><button class="btn" :disabled="assistantDialog.saving" @click="assistantDialog.visible = false">取消</button><button class="btn primary" :disabled="assistantDialog.saving || !/^\d{5,11}$/.test(assistantDialog.uin.trim()) || !assistantDialog.roles.length" @click="addAssistant">{{ assistantDialog.saving ? '添加中…' : '确认添加' }}</button></div></section></div>
+
+    <div v-if="assistantRoleDialog.visible" class="v2-qr-overlay" @click.self="assistantRoleDialog.visible = false">
+      <div class="form-modal compact-modal">
+        <div class="v2-qr-title">编辑协助权限</div>
+        <div class="v2-qr-desc">{{ assistantRoleDialog.member?.name }}（{{ assistantRoleDialog.member?.uin }}）</div>
+        <div class="assistant-role-options"><label v-for="role in ASSISTANT_ROLE_OPTIONS" :key="role.key"><input v-model="assistantRoleDialog.roles" type="checkbox" :value="role.key" />{{ role.label }}</label></div>
+        <div class="create-actions"><button class="btn ghost" type="button" @click="assistantRoleDialog.visible = false">取消</button><button class="btn primary" type="button" :disabled="assistantRoleDialog.saving || !assistantRoleDialog.roles.length" @click="saveAssistantRoles">{{ assistantRoleDialog.saving ? '保存中...' : '保存权限' }}</button></div>
+      </div>
+    </div>
+
+    <!-- 群选择器 -->
+    <div v-if="groupPicker.visible" class="v2-qr-overlay" @click.self="groupPicker.visible = false">
+      <div class="form-modal developer-picker-modal">
+        <div class="v2-qr-title">{{ groupPicker.purpose === 'admin' ? '选择白名单群' : '选择提醒群' }}</div>
+        <div class="v2-qr-desc">{{ groupPicker.purpose === 'admin' ? '只显示机器人已加入的群聊' : '选择接收敏感权限提醒的群聊' }}</div>
+        <div v-if="groupPicker.loading" class="report-empty">正在加载群聊...</div>
+        <div v-else class="developer-picker-list">
+          <button v-for="group in groupPicker.groups" :key="group.id" type="button" class="developer-picker-item" :disabled="groupPicker.saving || groupAlreadySelected(group)" @click="selectBotGroup(group)">
+            <span class="developer-picker-mark">{{ firstCharacter(group.name) || '群' }}</span>
+            <span class="developer-picker-info"><strong>{{ group.name }}</strong><small>群号：{{ group.id }}</small></span>
+            <span class="developer-picker-type">{{ groupAlreadySelected(group) ? '已添加' : '选择' }}</span>
+          </button>
+          <div v-if="!groupPicker.groups.length" class="report-empty">暂无可选群聊</div>
+        </div>
+        <div class="create-actions"><button class="btn ghost" type="button" @click="groupPicker.visible = false">关闭</button></div>
+      </div>
+    </div>
+
+    <!-- 敏感提醒用户 -->
+    <div v-if="sensitiveDialog.visible" class="v2-qr-overlay" @click.self="sensitiveDialog.visible = false">
+      <div class="form-modal compact-modal">
+        <div class="v2-qr-title">添加提醒用户</div>
+        <div class="v2-qr-desc">请输入接收敏感权限提醒的 QQ 号</div>
+        <label class="create-field"><span>QQ 号</span><input v-model="sensitiveDialog.value" inputmode="numeric" maxlength="11" placeholder="请输入 QQ 号" /></label>
+        <div class="create-actions"><button class="btn ghost" type="button" @click="sensitiveDialog.visible = false">取消</button><button class="btn primary" type="button" :disabled="sensitiveDialog.saving || !/^\d{5,11}$/.test(sensitiveDialog.value.trim())" @click="saveSensitiveDialog">{{ sensitiveDialog.saving ? '保存中...' : '保存' }}</button></div>
+      </div>
+    </div>
+
     <!-- 重置 AppSecret -->
     <div v-if="secretResetDialog && !isMember" class="v2-qr-overlay" @click.self="secretResetDialog = false">
       <div class="form-modal compact-modal">
@@ -2276,7 +2533,7 @@ defineExpose({ reload: loadStatus })
           <label v-for="developer in scanDevelopers" :key="developer.id" :class="['v2-entity-item', { selected: selectedDeveloperId === developer.id }]">
             <input v-model="selectedDeveloperId" type="radio" :value="developer.id" />
             <span class="v2-entity-info">
-              <strong>{{ developer.name }}</strong>
+              <strong>{{ displaySubjectName(developer.name) || '未认证主体' }}</strong>
               <small>{{ subjectTypeText(developer.subject_type) }}{{ developer.email ? ` · ${developer.email}` : '' }}</small>
             </span>
           </label>
@@ -2413,31 +2670,6 @@ defineExpose({ reload: loadStatus })
 .event-groups .event-item small { color: var(--ink-4); font-size: 11px; line-height: 1.45; }
 .event-groups .event-item code { color: var(--ink-4); font-size: 10.5px; text-align: right; overflow-wrap: anywhere; }
 .connect-profile-qr-pop .create-friend-qr-img img { width: 100%; height: 100%; object-fit: contain; }
-.advanced-intro { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 16px; padding: 20px 22px; border: 1px solid var(--accent-border); border-radius: 16px; background: linear-gradient(135deg, var(--accent-soft), rgba(124, 108, 240, .08)); color: var(--accent); }
-.advanced-intro h2 { margin: 5px 0 6px; color: var(--ink); font-size: 18px; }
-.advanced-intro p { margin: 0; color: var(--ink-3); font-size: 12.5px; line-height: 1.6; }
-.advanced-eyebrow { font-size: 10px; font-weight: 750; letter-spacing: .12em; text-transform: uppercase; }
-.advanced-console { padding: 20px !important; }
-.advanced-console-head { display: flex; align-items: flex-end; gap: 12px; }
-.advanced-console-head label { min-width: 0; display: grid; flex: 1; gap: 7px; color: var(--ink-3); font-size: 11.5px; }
-.advanced-console-head select { width: 100%; padding: 10px 12px; border: 1px solid var(--line-strong); border-radius: 9px; background: var(--bg-elev); color: var(--ink); font: inherit; outline: none; }
-.advanced-console-head select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
-.advanced-method { padding: 6px 9px; border-radius: 7px; background: rgba(37, 180, 126, .12); color: #149665; font-family: var(--font-mono); font-size: 10.5px; font-weight: 750; }
-.advanced-method.mock { background: rgba(124, 108, 240, .12); color: #6455d9; }
-.advanced-path { margin-top: 13px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--bg-sunken); color: var(--ink-2); font-family: var(--font-mono); font-size: 11.5px; overflow-wrap: anywhere; }
-.advanced-description { margin: 9px 0 16px; color: var(--ink-4); font-size: 11.5px; line-height: 1.55; }
-.advanced-mock-warning { margin: -5px 0 16px; padding: 10px 12px; border: 1px solid rgba(124, 108, 240, .2); border-radius: 9px; background: rgba(124, 108, 240, .07); color: #8579c9; font-size: 11px; line-height: 1.55; }
-.advanced-payload { display: grid; gap: 7px; color: var(--ink-3); font-size: 11.5px; }
-.advanced-payload textarea { width: 100%; box-sizing: border-box; padding: 12px; border: 1px solid var(--line-strong); border-radius: 10px; background: #17202b; color: #d8e5f2; font: 11.5px/1.65 var(--font-mono); resize: vertical; outline: none; }
-.advanced-payload textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
-.advanced-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 14px; }
-.advanced-actions>span { color: var(--ink-4); font-size: 10.5px; }
-.advanced-response { padding: 20px !important; }
-.advanced-response-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
-.advanced-response pre { max-height: 480px; margin: 0; padding: 14px; overflow: auto; border-radius: 10px; background: #17202b; color: #d8e5f2; font: 11px/1.65 var(--font-mono); white-space: pre-wrap; word-break: break-word; }
-.advanced-error { padding: 13px 14px; border: 1px solid rgba(255, 59, 48, .2); border-radius: 10px; background: rgba(255, 59, 48, .06); color: var(--danger); font-size: 12px; }
-.qqdash .page-manage { padding-top: 14px; }
-
 .qqdash .bot-switch-trigger { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border: 1px solid var(--line-strong); border-radius: 999px; background: var(--bg-elev); color: var(--ink-2); font-size: 12px; font-weight: 600; cursor: pointer; transition: all .15s; flex: none; }
 .qqdash .bot-switch-trigger:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
 .qqdash .bot-switch-avatar { overflow: hidden; color: #fff; }
@@ -2497,6 +2729,37 @@ defineExpose({ reload: loadStatus })
   .avatar-cropper-body { justify-content: flex-start; gap: 14px; overflow-x: auto; }
   .avatar-cropper-preview { display: none; }
 }
+.qqdash .assistant-member-item { gap: 12px; }
+.qqdash .assistant-member-info { min-width: 0; display: flex; align-items: center; gap: 10px; }
+.qqdash .assistant-member-info>img, .qqdash .assistant-avatar { width: 36px; height: 36px; flex: none; border-radius: 50%; object-fit: cover; }
+.qqdash .assistant-avatar { display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); font-weight: 700; }
+.qqdash .assistant-member-info>span:last-child { display: grid; gap: 3px; color: var(--ink-2); font-size: 12px; }
+.qqdash .assistant-member-info small { color: var(--ink-4); font-size: 11px; }
+.qqdash .assistant-actions { display: flex; align-items: center; gap: 7px; }
+.qqdash .assistant-role-options { display: grid; gap: 12px; margin-top: 18px; color: var(--ink-2); font-size: 13px; }
+.qqdash .assistant-role-options label { display: flex; align-items: center; gap: 9px; }
+.qqdash .assistant-role-options input, .qqdash .event-all-toggle input { accent-color: var(--accent); }
+.qqdash .scope-range-row select { padding: 7px 28px 7px 10px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--bg-elev); color: var(--ink-2); font: inherit; }
+.qqdash .group-admin-targets { display: inline-flex; gap: 4px; margin: 16px 0 12px; padding: 3px; border-radius: 9px; background: var(--bg-sunken); }
+.qqdash .group-admin-targets button { padding: 7px 13px; border: 0; border-radius: 7px; background: transparent; color: var(--ink-3); font: inherit; font-size: 12px; cursor: pointer; }
+.qqdash .group-admin-targets button.active { background: var(--bg-elev); color: var(--accent); box-shadow: 0 1px 4px rgba(0,0,0,.1); }
+.qqdash .group-admin-whitelist { margin-bottom: 8px; }
+.qqdash .group-permission-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.qqdash .group-permission-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 60px; padding: 12px; border: 1px solid var(--line); border-radius: 11px; background: var(--bg-elev); color: var(--ink-2); text-align: left; cursor: pointer; }
+.qqdash .group-permission-item>span:first-child { display: grid; gap: 4px; }
+.qqdash .group-permission-item b { font-size: 12px; }
+.qqdash .group-permission-item small { color: var(--ink-4); font-size: 10.5px; line-height: 1.4; }
+.qqdash .group-permission-item .switch { position: relative; flex: none; pointer-events: none; }
+.qqdash .group-permission-save { display: flex; justify-content: flex-end; margin-top: 14px; }
+.qqdash .sensitive-alert-config .sec-group-head { align-items: flex-start; }
+.qqdash .sensitive-alert-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; margin-top: 16px; }
+.qqdash .sensitive-alert-column { min-width: 0; }
+.qqdash .sensitive-alert-column .dev-tester-block-head { margin-bottom: 7px; }
+.qqdash .event-all-toggle { display: inline-flex; align-items: center; gap: 8px; margin: 0 0 14px; color: var(--ink-2); font-size: 12px; }
+.qqdash .advanced-entry-card { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 20px; }
+.qqdash .advanced-entry-copy { min-width: 0; }
+.qqdash .advanced-entry-copy p { margin: 7px 0 0; color: var(--ink-4); font-size: 12px; line-height: 1.6; }
+.qqdash .advanced-entry-card>.btn { flex: none; }
 .qqdash .switch-row { display: flex; align-items: center; justify-content: space-between; }
 .qqdash .row-desc { color: var(--ink-3); font-size: 12px; margin-top: 4px; }
 .qqdash .ip-whitelist-head, .qqdash .dev-tester-block-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
@@ -2512,4 +2775,9 @@ defineExpose({ reload: loadStatus })
 .qq-toast { position: fixed; left: 50%; bottom: 48px; transform: translateX(-50%); background: rgba(0,0,0,.82); color: #fff; padding: 10px 20px; border-radius: 10px; font-size: 13px; z-index: 9999; }
 .toast-fade-enter-active, .toast-fade-leave-active { transition: opacity .25s; }
 .toast-fade-enter-from, .toast-fade-leave-to { opacity: 0; }
+@media (max-width: 720px) {
+  .qqdash .group-permission-grid, .qqdash .sensitive-alert-grid { grid-template-columns: 1fr; }
+  .qqdash .advanced-entry-card { align-items: flex-start; flex-direction: column; }
+  .qqdash .advanced-entry-card>.btn { width: 100%; justify-content: center; }
+}
 </style>

@@ -78,18 +78,21 @@ const ConfigNode = defineComponent({
 
 const filteredModules = computed(() => {
   if (mode.value === 'plugin') return []
-  const q = search.value.toLowerCase()
+  const q = search.value.trim().toLowerCase()
   let list = modules.value
   if (q) list = list.filter(m => m.name.toLowerCase().includes(q) || (m.display_name || '').toLowerCase().includes(q) || (m.description || '').toLowerCase().includes(q))
   return list
 })
 const filteredDirs = computed(() => {
   if (mode.value === 'module') return []
-  const q = search.value.toLowerCase()
+  const q = search.value.trim().toLowerCase()
   if (!q) return dirs.value
-  return dirs.value.filter(d => d.directory.toLowerCase().includes(q) || (d.description || '').toLowerCase().includes(q) || d.files.some(f => f.name.toLowerCase().includes(q)) || (d.commands || []).some(c => (c.name || '').toLowerCase().includes(q)))
+  return dirs.value.filter(d => [d.directory, d.meta?.name, d.meta?.author, d.meta?.description, d.description].some(value => (value || '').toLowerCase().includes(q)) || d.files.some(f => f.name.toLowerCase().includes(q)) || (d.commands || []).some(c => (c.name || '').toLowerCase().includes(q)))
 })
 const allItems = computed(() => [...filteredModules.value, ...filteredDirs.value])
+const totalCount = computed(() => dirs.value.length + modules.value.length)
+const pluginCount = computed(() => dirs.value.length)
+const moduleCount = computed(() => modules.value.length)
 // 排序: 小型插件在前, 大型插件在后 (模块在模板中排最后)
 const sortedDirs = computed(() => [...filteredDirs.value].sort((a, b) => (a.is_large ? 1 : 0) - (b.is_large ? 1 : 0)))
 
@@ -277,7 +280,11 @@ async function openDirConfig(dir) {
   if (expanded[key]) { expanded[key] = false; return }
   try {
     const res = await axios.post('/api/plugins/config-files', { name: dir.directory })
-    if (res.data.success && res.data.config_files?.length) { dir._config_files = res.data.config_files; res.data.config_files.length === 1 ? readConfig(res.data.config_files[0]) : (expanded[key] = true) }
+    if (res.data.success && res.data.config_files?.length) {
+      dir._config_files = res.data.config_files
+      if (res.data.config_files.length === 1) readConfig(res.data.config_files[0])
+      else { expanded[dir.directory] = true; expanded[key] = true }
+    }
     else msg.info('暂无配置文件')
   } catch { msg.error('获取配置失败') }
 }
@@ -328,143 +335,75 @@ onMounted(() => { appStore.fetchBots(); fetchAll() })
 
 <template>
   <div class="plugins-page">
-    <div class="plugins-toolbar">
-      <div class="toolbar-left">
-        <select v-model="mode" class="p-select"><option value="all">全部</option><option value="plugin">插件</option><option value="module">模块</option></select>
-        <select v-model="fileView" class="p-select" title="大型插件文件显示方式"><option value="main">仅显示主入口</option><option value="all">显示全部文件</option></select>
-        <label v-if="mode !== 'module'" class="p-btn upload-btn"><SvgIcon name="upload" :size="14" /><span>上传插件</span><input type="file" accept=".py,.zip" hidden @change="uploadPlugin" /></label>
-        <label v-if="mode !== 'plugin'" class="p-btn upload-btn"><SvgIcon name="upload" :size="14" /><span>上传模块</span><input type="file" accept=".zip" hidden @change="uploadModule" /></label>
-      </div>
-      <div class="toolbar-right">
-        <button class="p-btn" @click="fetchAll" :disabled="loading"><SvgIcon name="refresh" :size="14" /><span>刷新</span></button>
-        <div class="p-search-wrap">
-          <SvgIcon name="search" :size="14" class="p-search-icon" />
-          <input v-model="search" class="p-search" placeholder="搜索插件或模块..." />
+    <div class="plugin-layout">
+      <section class="plugin-main-panel">
+        <div class="plugin-toolbar">
+          <div class="plugin-toolbar-filters">
+            <div class="plugin-mode-tabs" role="group" aria-label="插件类型">
+              <button type="button" :class="{ active: mode === 'all' }" :aria-pressed="mode === 'all'" @click="mode = 'all'">全部 <small>{{ totalCount }}</small></button>
+              <button type="button" :class="{ active: mode === 'plugin' }" :aria-pressed="mode === 'plugin'" @click="mode = 'plugin'">插件 <small>{{ pluginCount }}</small></button>
+              <button type="button" :class="{ active: mode === 'module' }" :aria-pressed="mode === 'module'" @click="mode = 'module'">模块 <small>{{ moduleCount }}</small></button>
+            </div>
+            <div class="plugin-search">
+              <SvgIcon name="search" :size="14" />
+              <input v-model="search" type="search" placeholder="搜索名称、文件或命令" aria-label="搜索插件或模块" />
+              <button v-if="search" type="button" aria-label="清除搜索" @click="search = ''"><SvgIcon name="x" :size="13" /></button>
+            </div>
+          </div>
+          <div class="plugin-toolbar-actions">
+            <div v-if="sortedDirs.some(d => d.is_large)" class="plugin-file-view" role="group" aria-label="文件显示方式" title="大型插件文件显示方式">
+              <button type="button" :class="{ active: fileView === 'main' }" :aria-pressed="fileView === 'main'" @click="fileView = 'main'">主入口</button>
+              <button type="button" :class="{ active: fileView === 'all' }" :aria-pressed="fileView === 'all'" @click="fileView = 'all'">全部文件</button>
+            </div>
+            <label v-if="mode !== 'module'" class="plugin-tool-button"><SvgIcon name="upload" :size="14" /><span>上传插件</span><input type="file" accept=".py,.zip" hidden @change="uploadPlugin" /></label>
+            <label v-if="mode !== 'plugin'" class="plugin-tool-button"><SvgIcon name="upload" :size="14" /><span>上传模块</span><input type="file" accept=".zip" hidden @change="uploadModule" /></label>
+            <button class="plugin-icon-button" type="button" title="刷新" :disabled="loading" @click="fetchAll"><SvgIcon name="refresh" :size="15" :class="{ 'reload-spinning': loading }" /></button>
+          </div>
         </div>
-      </div>
-    </div>
 
-    <div v-if="loading" class="p-loading">加载中...</div>
-    <div v-else-if="!allItems.length" class="p-empty">暂无{{ mode === 'module' ? '模块' : mode === 'plugin' ? '插件' : '内容' }}</div>
-    <div v-else class="plugins-list">
-      <div v-for="d in sortedDirs" :key="d.directory" class="p-dir">
-        <div class="p-dir-head" @click="toggle(d.directory)">
-          <div class="p-dir-left">
-            <SvgIcon :name="expanded[d.directory] ? 'chevron-forward' : 'chevron-back'" :size="14" :style="{ transform: expanded[d.directory] ? 'rotate(90deg)' : 'rotate(0)', transition: '.15s' }" />
-            <SvgIcon name="extension-puzzle" :size="14" style="color:var(--text2)" />
-            <span class="p-dir-name">{{ d.is_large ? (d.meta?.name || d.directory) : d.directory }}</span>
-            <span class="p-tag plugin-tag">插件</span>
-            <span v-if="d.is_system" class="p-tag">系统</span>
-            <span :class="['p-tag', d.enabled ? 'ok' : 'off']">{{ d.enabled ? '已加载' : '未加载' }}</span>
-            <span v-if="d.is_large && d.meta?.version" class="p-tag">v{{ d.meta.version }}</span>
-            <span v-else-if="!d.is_large" class="p-tag">{{ d.files.length }} 个文件</span>
-            <span v-else class="p-tag">{{ d.files.length }} 个文件</span>
-          </div>
-          <div class="p-dir-right" @click.stop>
-            <span v-if="d.is_large && d.meta?.author" class="p-meta-author">{{ d.meta.author }}</span>
-            <span v-if="d.is_large && (d.meta?.description || d.description)" class="p-dir-desc">{{ d.meta?.description || d.description }}</span>
-            <a v-if="d.is_large && d.meta?.github" class="p-meta-link" :href="d.meta.github" target="_blank" @click.stop title="GitHub"><SvgIcon name="globe" :size="12" /></a>
-            <button class="p-act-btn sm" :disabled="!d.enabled || d._reloading" :title="d.enabled ? '重载插件' : '插件未加载，无法重载'" @click.stop="reloadPlugin(d)">
-              <SvgIcon name="refresh" :size="13" :class="{ 'reload-spinning': d._reloading }" />
-            </button>
-            <label v-if="d.is_large && entryFile(d)" class="p-switch-sm module-switch" :title="entryDisabled(d) ? '启用插件' : '禁用插件'">
-              <input type="checkbox" :checked="!entryDisabled(d)" :disabled="entryFile(d)._toggling" @change="toggleDir(d)" /><span />
-            </label>
-            <span class="p-tag config-tag" @click="openDirConfig(d)"><SvgIcon name="settings" :size="10" /> 配置 </span>
-            <span :class="['p-tag bot-bind-tag', { active: d.allowed_bots?.length }]" @click="toggleBotBind(d.directory)">
-              <SvgIcon name="people" :size="10" /> {{ d.allowed_bots?.length ? d.allowed_bots.length + '个机器人' : '全部机器人' }}
-            </span>
-            <span v-if="d.is_large && !d.is_system" class="p-tag uninstall-tag" @click="showUninstall(d.directory, 'plugin')"><SvgIcon name="trash" :size="10" /> 卸载</span>
-          </div>
-        </div>
-        <div v-if="botBindOpen[d.directory]" class="bot-bind-panel" @click.stop>
-          <div class="bot-bind-title">选择允许触发的机器人 (不选 = 全部)</div>
-          <label v-for="bot in botBindingOptions(d)" :key="bot.appid" :class="['bot-bind-item', { deleted: bot.deleted, locked: bot.deleted && !isBotBound(d, bot.appid) }]" :title="bot.deleted ? (isBotBound(d, bot.appid) ? '该机器人已删除，只能取消绑定' : '已解除绑定，无法重新选择') : ''">
-            <input type="checkbox" :checked="isBotBound(d, bot.appid)" :disabled="bot.deleted && !isBotBound(d, bot.appid)" @change="e => bindBot(d, bot, e.target.checked)" />
-            <span v-if="bot.deleted" class="bot-bind-avatar deleted-avatar"><SvgIcon name="person" :size="12" /></span>
-            <img v-else-if="bot.avatar" :src="bot.avatar" class="bot-bind-avatar" />
-            <span>{{ bot.name || bot.appid }}</span><span v-if="bot.deleted" class="bot-bind-deleted">已删除</span><span class="bot-bind-id">{{ bot.appid }}</span>
-          </label>
-        </div>
-        <div v-if="d.commands?.length && expanded[d.directory]" class="p-dir-cmds">
-          <span v-for="cmd in d.commands" :key="cmd.pattern" :class="['p-cmd-tag', { owner: cmd.owner_only, group: cmd.group_only && !cmd.owner_only }]" :title="(cmd.owner_only ? '[主人专用] ' : cmd.group_only ? '[群聊专用] ' : '[所有人] ') + (cmd.name ? cmd.name + ' | ' : '') + (cmd.desc ? cmd.pattern + ' — ' + cmd.desc : cmd.pattern)">
-            <SvgIcon :name="cmd.owner_only ? 'shield' : cmd.group_only ? 'group' : 'globe'" :size="11" /> {{ cmd.name || cleanPattern(cmd.pattern) }}
-          </span>
-        </div>
-        <div v-if="expanded['cfg_' + d.directory] && d._config_files?.length" class="p-dir-files">
-          <div v-for="cf in d._config_files" :key="cf.path" class="p-file">
-            <div class="p-file-left">
-              <SvgIcon name="settings" :size="13" />
-              <span class="p-file-name">{{ cf.name }}</span>
-              <span :class="['p-tag', 'fmt-' + cf.format]">{{ cf.format.toUpperCase() }}</span>
-              <span class="p-file-size">{{ formatFileSize(cf.size) }}</span>
-            </div>
-            <div class="p-file-actions">
-              <button class="p-act-btn sm" @click="readConfig(cf)" title="编辑配置"><SvgIcon name="settings" :size="13" /></button>
-            </div>
-          </div>
-        </div>
-        <div v-if="expanded[d.directory]" class="p-dir-files">
-          <template v-for="f in visibleFiles(d)" :key="f.path">
-            <div :class="['p-file', { 'p-file-greyed': entryDisabled(d) && isSubFile(f) }]">
-              <div class="p-file-left"><SvgIcon name="file" :size="13" /><span class="p-file-name">{{ f.name }}</span><span v-if="!d.is_large && f.meta?.name" class="p-file-meta">({{ f.meta.name }}<template v-if="f.meta?.version"> v{{ f.meta.version }}</template>)</span><span class="p-file-size">{{ formatFileSize(f.size) }}</span><span class="p-file-time">{{ f.last_modified }}</span></div>
-              <div class="p-file-actions">
-                <span v-if="!d.is_large" :class="['p-tag bot-bind-tag sm', { active: f.allowed_bots?.length }]" @click.stop="toggleBotBind(d.directory + '/' + fileBase(f))" :title="f.allowed_bots?.length ? '已绑定 ' + f.allowed_bots.length + ' 个机器人' : '全部机器人'">
-                  <SvgIcon name="people" :size="9" /> {{ f.allowed_bots?.length || '全部' }}
-                </span>
-                <label v-if="!d.is_large" class="p-switch-sm" :title="f.enabled ? '禁用' : '启用'"><input type="checkbox" :checked="f.enabled" :disabled="f._toggling" @change="toggleFile(f, d)" /><span /></label>
-                <button class="p-act-btn sm" @click="readFile(f)" title="查看代码"><SvgIcon name="code" :size="13" /></button>
-                <button v-if="!d.is_large && !d.is_system" class="p-act-btn sm danger-btn" @click.stop="showUninstall(d.directory === 'alone' ? fileBase(f) : d.directory, 'plugin')" title="卸载"><SvgIcon name="trash" :size="13" /></button>
+        <div v-if="loading" class="plugin-state"><SvgIcon name="refresh" :size="17" class="reload-spinning" /><span>正在读取插件列表…</span></div>
+        <div v-else-if="!allItems.length" class="plugin-state plugin-state-empty"><SvgIcon name="link" :size="22" /><strong>没有匹配的内容</strong><span>{{ search ? '换个关键词试试' : '上传插件或模块后会显示在这里' }}</span></div>
+        <div v-else class="plugin-items">
+          <article v-for="d in sortedDirs" :key="d.directory" :class="['plugin-entry', { expanded: expanded[d.directory], inactive: !d.enabled }]">
+            <div class="plugin-entry-head" @click="toggle(d.directory)">
+              <button class="plugin-expand-button" type="button" :aria-label="expanded[d.directory] ? '收起' : '展开'" :aria-expanded="!!expanded[d.directory]"><SvgIcon name="chevron-forward" :size="14" :class="{ rotated: expanded[d.directory] }" /></button>
+              <div class="plugin-entry-icon"><SvgIcon name="link" :size="22" /></div>
+              <div class="plugin-entry-main">
+                <div class="plugin-entry-title"><strong>{{ d.is_large ? (d.meta?.name || d.directory) : d.directory }}</strong><span class="plugin-tag">插件</span><span v-if="d.is_system" class="neutral-tag">系统</span><span :class="['status-tag', d.enabled ? 'online' : 'offline']">{{ d.enabled ? '已加载' : '未加载' }}</span></div>
+                <div class="plugin-entry-meta"><span v-if="d.is_large && d.meta?.author">{{ d.meta.author }}</span><span v-if="d.is_large && (d.meta?.description || d.description)">{{ d.meta?.description || d.description }}</span><span v-else-if="!d.is_large">{{ d.files.length }} 个文件</span><a v-if="d.is_large && d.meta?.github" :href="d.meta.github" target="_blank" rel="noreferrer" @click.stop><SvgIcon name="globe" :size="12" /> 项目主页</a></div>
+              </div>
+              <div class="plugin-entry-actions" @click.stop>
+                <span v-if="d.is_large && d.meta?.version" class="version-tag">v{{ d.meta.version }}</span>
+                <span v-else-if="d.is_large" class="version-tag">{{ d.files.length }} 文件</span>
+                <button class="plugin-action-button" type="button" :disabled="!d.enabled || d._reloading" title="重载插件" @click="reloadPlugin(d)"><SvgIcon name="refresh" :size="14" :class="{ 'reload-spinning': d._reloading }" /></button>
+                <label v-if="d.is_large && entryFile(d)" class="plugin-switch" :title="entryDisabled(d) ? '启用插件' : '禁用插件'"><input type="checkbox" :checked="!entryDisabled(d)" :disabled="entryFile(d)._toggling" @change="toggleDir(d)" /><span /></label>
+                <button class="plugin-action-button" type="button" :class="{ active: expanded['cfg_' + d.directory] }" title="配置" @click="openDirConfig(d)"><SvgIcon name="settings" :size="14" /></button>
+                <button class="plugin-action-button" :class="{ active: d.allowed_bots?.length }" type="button" :title="d.allowed_bots?.length ? `${d.allowed_bots.length} 个机器人` : '全部机器人'" @click="toggleBotBind(d.directory)"><SvgIcon name="people" :size="14" /></button>
+                <button v-if="d.is_large && !d.is_system" class="plugin-action-button danger" type="button" title="卸载" @click="showUninstall(d.directory, 'plugin')"><SvgIcon name="trash" :size="14" /></button>
               </div>
             </div>
-            <div v-if="!d.is_large && botBindOpen[d.directory + '/' + fileBase(f)]" class="bot-bind-panel file-level" @click.stop>
-              <div class="bot-bind-title">{{ f.name }} — 选择允许触发的机器人</div>
-              <label v-for="bot in botBindingOptions(f)" :key="bot.appid" :class="['bot-bind-item', { deleted: bot.deleted, locked: bot.deleted && !isBotBound(f, bot.appid) }]" :title="bot.deleted ? (isBotBound(f, bot.appid) ? '该机器人已删除，只能取消绑定' : '已解除绑定，无法重新选择') : ''">
-                <input type="checkbox" :checked="isBotBound(f, bot.appid)" :disabled="bot.deleted && !isBotBound(f, bot.appid)" @change="e => bindBot(f, bot, e.target.checked)" />
-                <span v-if="bot.deleted" class="bot-bind-avatar deleted-avatar"><SvgIcon name="person" :size="12" /></span>
-                <img v-else-if="bot.avatar" :src="bot.avatar" class="bot-bind-avatar" />
-                <span>{{ bot.name || bot.appid }}</span><span v-if="bot.deleted" class="bot-bind-deleted">已删除</span><span class="bot-bind-id">{{ bot.appid }}</span>
-              </label>
+            <div v-if="botBindOpen[d.directory]" class="plugin-bot-panel" @click.stop>
+              <div class="plugin-detail-label">选择允许触发的机器人 <span>不选则允许全部机器人</span></div>
+              <label v-for="bot in botBindingOptions(d)" :key="bot.appid" :class="['plugin-bot-item', { deleted: bot.deleted, locked: bot.deleted && !isBotBound(d, bot.appid) }]" :title="bot.deleted ? (isBotBound(d, bot.appid) ? '该机器人已删除，只能取消绑定' : '已解除绑定，无法重新选择') : ''"><input type="checkbox" :checked="isBotBound(d, bot.appid)" :disabled="bot.deleted && !isBotBound(d, bot.appid)" @change="e => bindBot(d, bot, e.target.checked)" /><span v-if="bot.deleted" class="plugin-bot-avatar deleted-avatar"><SvgIcon name="person" :size="12" /></span><img v-else-if="bot.avatar" :src="bot.avatar" class="plugin-bot-avatar" /><span>{{ bot.name || bot.appid }}</span><span v-if="bot.deleted" class="plugin-bot-deleted">已删除</span><span class="plugin-bot-id">{{ bot.appid }}</span></label>
             </div>
-          </template>
-        </div>
-      </div>
-      <div v-for="m in filteredModules" :key="'m_' + m.name" class="p-dir mod-card">
-        <div class="p-dir-head" @click="toggle('m_' + m.name)">
-          <div class="p-dir-left">
-            <SvgIcon :name="expanded['m_'+m.name] ? 'chevron-forward' : 'chevron-back'" :size="14" :style="{ transform: expanded['m_'+m.name] ? 'rotate(90deg)' : 'rotate(0)', transition: '.15s' }" />
-            <SvgIcon name="cube" :size="14" style="color:var(--accent)" />
-            <span class="p-dir-name">{{ m.display_name }}</span>
-            <span class="p-tag module-tag">模块</span>
-            <span :class="['p-tag', m.enabled ? 'ok' : 'off']">{{ m.enabled ? '运行中' : '未启用' }}</span>
-            <span v-if="m.error" class="p-tag off" :title="m.error">异常</span>
-            <span class="p-tag">v{{ m.version }}</span>
-          </div>
-          <div class="p-dir-right" @click.stop>
-            <span v-if="m.description" class="p-dir-desc">{{ m.description }}</span>
-            <label class="p-switch-sm module-switch" :title="m.persist_enabled ? '关闭模块' : '开启模块'">
-              <input type="checkbox" :checked="m.persist_enabled" :disabled="m._toggling" @change="toggleModule(m)" /><span />
-            </label>
-            <span v-if="m.config_files?.length" class="p-tag config-tag" @click="openModuleConfig(m)"><SvgIcon name="settings" :size="10" /> 配置 </span>
-            <span class="p-tag uninstall-tag" @click="showUninstall(m.name, 'module')"><SvgIcon name="trash" :size="10" /> 卸载</span>
-          </div>
-        </div>
-        <div v-if="expanded['m_' + m.name]" class="p-dir-files">
-          <div v-if="!m.config_files?.length" class="p-empty-inline">暂无配置文件</div>
-          <div v-for="cf in m.config_files" :key="cf.path" class="p-file">
-            <div class="p-file-left">
-              <SvgIcon name="file" :size="13" />
-              <span class="p-file-name">{{ cf.name }}</span>
-              <span :class="['p-tag', 'fmt-' + cf.format]">{{ cf.format.toUpperCase() }}</span>
-              <span class="p-file-size">{{ formatFileSize(cf.size) }}</span>
+            <div v-if="expanded[d.directory]" class="plugin-entry-detail">
+              <div v-if="d.commands?.length" class="plugin-detail-block"><div class="plugin-detail-heading"><span>命令</span><small>{{ d.commands.length }}</small></div><div class="plugin-command-list"><span v-for="cmd in d.commands" :key="cmd.pattern" :class="['plugin-command', { owner: cmd.owner_only, group: cmd.group_only && !cmd.owner_only }]" :title="(cmd.owner_only ? '[主人专用] ' : cmd.group_only ? '[群聊专用] ' : '[所有人] ') + (cmd.name ? cmd.name + ' | ' : '') + (cmd.desc ? cmd.pattern + ' — ' + cmd.desc : cmd.pattern)"><SvgIcon :name="cmd.owner_only ? 'shield' : cmd.group_only ? 'group' : 'globe'" :size="11" />{{ cmd.name || cleanPattern(cmd.pattern) }}</span></div></div>
+              <div v-if="expanded['cfg_' + d.directory] && d._config_files?.length" class="plugin-detail-block"><div class="plugin-detail-heading"><span>配置文件</span><small>{{ d._config_files.length }}</small></div><div v-for="cf in d._config_files" :key="cf.path" class="plugin-file-row"><div class="plugin-file-info"><SvgIcon name="settings" :size="14" /><strong>{{ cf.name }}</strong><span :class="['format-tag', 'fmt-' + cf.format]">{{ cf.format.toUpperCase() }}</span><small>{{ formatFileSize(cf.size) }}</small></div><button class="plugin-action-button" type="button" title="编辑配置" @click="readConfig(cf)"><SvgIcon name="settings" :size="14" /></button></div></div>
+              <div class="plugin-detail-block"><div class="plugin-detail-heading"><span>文件</span><small>{{ visibleFiles(d).length }}{{ fileView === 'main' && d.is_large ? ' / ' + d.files.length : '' }}</small></div><template v-for="f in visibleFiles(d)" :key="f.path"><div :class="['plugin-file-row', { 'plugin-file-disabled': entryDisabled(d) && isSubFile(f) }]" ><div class="plugin-file-info"><SvgIcon name="file" :size="14" /><strong>{{ f.name }}</strong><span v-if="!d.is_large && f.meta?.name" class="plugin-file-meta">{{ f.meta.name }}<template v-if="f.meta?.version"> · v{{ f.meta.version }}</template></span><small>{{ formatFileSize(f.size) }}<template v-if="f.last_modified"> · {{ f.last_modified }}</template></small></div><div class="plugin-file-actions"><button v-if="!d.is_large" :class="['plugin-mini-tag', { active: f.allowed_bots?.length }]" type="button" @click.stop="toggleBotBind(d.directory + '/' + fileBase(f))"><SvgIcon name="people" :size="11" />{{ f.allowed_bots?.length || '全部' }}</button><label v-if="!d.is_large" class="plugin-switch small" :title="f.enabled ? '禁用' : '启用'"><input type="checkbox" :checked="f.enabled" :disabled="f._toggling" @change="toggleFile(f, d)" /><span /></label><button class="plugin-action-button" type="button" title="查看代码" @click="readFile(f)"><SvgIcon name="code" :size="14" /></button><button v-if="!d.is_large && !d.is_system" class="plugin-action-button danger" type="button" title="卸载" @click.stop="showUninstall(d.directory === 'alone' ? fileBase(f) : d.directory, 'plugin')"><SvgIcon name="trash" :size="14" /></button></div></div><div v-if="!d.is_large && botBindOpen[d.directory + '/' + fileBase(f)]" class="plugin-bot-panel file-level" @click.stop><div class="plugin-detail-label">{{ f.name }} · 选择允许触发的机器人</div><label v-for="bot in botBindingOptions(f)" :key="bot.appid" :class="['plugin-bot-item', { deleted: bot.deleted, locked: bot.deleted && !isBotBound(f, bot.appid) }]" :title="bot.deleted ? (isBotBound(f, bot.appid) ? '该机器人已删除，只能取消绑定' : '已解除绑定，无法重新选择') : ''"><input type="checkbox" :checked="isBotBound(f, bot.appid)" :disabled="bot.deleted && !isBotBound(f, bot.appid)" @change="e => bindBot(f, bot, e.target.checked)" /><span v-if="bot.deleted" class="plugin-bot-avatar deleted-avatar"><SvgIcon name="person" :size="12" /></span><img v-else-if="bot.avatar" :src="bot.avatar" class="plugin-bot-avatar" /><span>{{ bot.name || bot.appid }}</span><span v-if="bot.deleted" class="plugin-bot-deleted">已删除</span><span class="plugin-bot-id">{{ bot.appid }}</span></label></div></template></div>
             </div>
-            <div class="p-file-actions">
-              <button class="p-act-btn sm" @click="readConfig(cf)" title="编辑配置"><SvgIcon name="settings" :size="13" /></button>
-            </div>
-          </div>
-        </div>
-      </div>
+          </article>
 
+          <article v-for="m in filteredModules" :key="'m_' + m.name" :class="['plugin-entry', 'module-entry', { expanded: expanded['m_' + m.name], inactive: !m.enabled }]">
+            <div class="plugin-entry-head" @click="toggle('m_' + m.name)">
+              <button class="plugin-expand-button" type="button" :aria-label="expanded['m_' + m.name] ? '收起' : '展开'" :aria-expanded="!!expanded['m_' + m.name]"><SvgIcon name="chevron-forward" :size="14" :class="{ rotated: expanded['m_' + m.name] }" /></button>
+              <div class="plugin-entry-icon module"><SvgIcon name="cube" :size="18" /></div>
+              <div class="plugin-entry-main"><div class="plugin-entry-title"><strong>{{ m.display_name }}</strong><span class="module-tag">模块</span><span :class="['status-tag', m.enabled ? 'online' : 'offline']">{{ m.enabled ? '运行中' : '未启用' }}</span><span v-if="m.error" class="status-tag offline" :title="m.error">异常</span></div><div class="plugin-entry-meta"><span v-if="m.description">{{ m.description }}</span><span v-else>模块依赖</span></div></div>
+              <div class="plugin-entry-actions" @click.stop><span class="version-tag">v{{ m.version }}</span><label class="plugin-switch" :title="m.persist_enabled ? '关闭模块' : '开启模块'"><input type="checkbox" :checked="m.persist_enabled" :disabled="m._toggling" @change="toggleModule(m)" /><span /></label><button v-if="m.config_files?.length" class="plugin-action-button" type="button" title="配置" @click="openModuleConfig(m)"><SvgIcon name="settings" :size="14" /></button><button class="plugin-action-button danger" type="button" title="卸载" @click="showUninstall(m.name, 'module')"><SvgIcon name="trash" :size="14" /></button></div>
+            </div>
+            <div v-if="expanded['m_' + m.name]" class="plugin-entry-detail"><div class="plugin-detail-block"><div class="plugin-detail-heading"><span>配置文件</span><small>{{ m.config_files?.length || 0 }}</small></div><div v-if="!m.config_files?.length" class="plugin-empty-inline">暂无配置文件</div><div v-for="cf in m.config_files" :key="cf.path" class="plugin-file-row"><div class="plugin-file-info"><SvgIcon name="file" :size="14" /><strong>{{ cf.name }}</strong><span :class="['format-tag', 'fmt-' + cf.format]">{{ cf.format.toUpperCase() }}</span><small>{{ formatFileSize(cf.size) }}</small></div><button class="plugin-action-button" type="button" title="编辑配置" @click="readConfig(cf)"><SvgIcon name="settings" :size="14" /></button></div></div></div>
+          </article>
+        </div>
+      </section>
     </div>
 
     <div v-if="uninstallConfirm.show" class="p-modal-overlay" @click.self="uninstallConfirm.show = false">
@@ -523,80 +462,251 @@ onMounted(() => { appStore.fetchBots(); fetchAll() })
     </div>
   </div>
 </template>
-
 <style scoped>
 .plugins-page {
-  display:flex;
-  flex-direction:column
+  --plugin-line: color-mix(in srgb, var(--text) 8%, var(--bg2));
+  --plugin-muted: color-mix(in srgb, var(--text2) 72%, var(--text3));
+  display: flex;
+  height: calc(100vh - 92px);
+  height: calc(100dvh - 92px - env(safe-area-inset-bottom, 0px));
+  min-height: 0;
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif;
 }
-.plugins-toolbar {
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  flex-wrap:wrap;
-  gap:8px;
-  margin-bottom:12px;
-  padding:10px 12px;
-  background:var(--bg2);
-  border:1px solid var(--border);
-  border-radius:var(--radius-sm);
-  box-shadow:var(--shadow-sm)
+.plugins-page *, .plugins-page *::before, .plugins-page *::after { box-sizing: border-box; }
+.plugins-page button, .plugins-page input, .plugins-page select { font: inherit; }
+.plugins-page button { cursor: pointer; }
+.plugins-page :is(button, input, select, a):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.plugin-layout {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--plugin-line);
+  border-radius: 18px;
+  background: var(--bg2);
+  box-shadow: 0 4px 24px color-mix(in srgb, var(--text) 3%, transparent);
 }
-.toolbar-left,.toolbar-right {
-  display:flex;
-  align-items:center;
-  flex-wrap:wrap;
-  gap:8px
+.plugin-mode-tabs {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: var(--bg3);
 }
-.toolbar-left {
-  flex:1;
-  min-width:200px
+.plugin-mode-tabs button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 0;
+  min-height: 28px;
+  padding: 4px 11px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text2);
+  font-size: 12px;
+  white-space: nowrap;
+  transition: background .15s, color .15s;
 }
-.p-select {
-  height:32px;
-  box-sizing:border-box;
-  background:var(--bg);
-  color:var(--text);
-  border:1px solid var(--border);
-  border-radius:6px;
-  padding:0 8px;
-  font-size:13px;
-  outline:none;
-  cursor:pointer;
-  min-width:80px
+.plugin-mode-tabs button:hover { color: var(--accent); }
+.plugin-mode-tabs button.active {
+  background: var(--bg2);
+  color: var(--accent);
+  font-weight: 650;
+  box-shadow: 0 1px 4px color-mix(in srgb, var(--text) 7%, transparent);
 }
-.p-select:focus {
-  border-color:var(--accent)
+.plugin-mode-tabs small { min-width: 12px; color: var(--text3); font-size: 10px; font-variant-numeric: tabular-nums; }
+.plugin-mode-tabs button.active small { color: var(--accent); }
+.plugin-search {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  gap: 8px;
+  min-width: 140px;
+  max-width: 280px;
+  height: 34px;
+  padding: 0 9px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: var(--bg3);
+  color: var(--text3);
+  transition: border-color .15s, background .15s;
 }
-.p-search-wrap {
-  position:relative;
-  flex:1;
-  max-width:260px;
-  min-width:140px
+.plugin-search:focus-within { border-color: color-mix(in srgb, var(--accent) 45%, var(--plugin-line)); background: var(--bg2); }
+.plugin-search input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--text); font-size: 12px; }
+.plugin-search input::placeholder { color: var(--text3); }
+.plugin-search input::-webkit-search-cancel-button { display: none; }
+.plugin-search > button { display: inline-flex; padding: 0; border: 0; background: transparent; color: var(--text3); }
+.plugin-search > button:hover { color: var(--text); }
+.plugin-main-panel { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; background: var(--bg); }
+.plugin-toolbar { display: flex; flex-shrink: 0; flex-wrap: wrap; align-items: center; gap: 12px 20px; padding: 14px 18px; border-bottom: 1px solid var(--plugin-line); background: var(--bg2); }
+.plugin-toolbar-filters { display: flex; align-items: center; flex: 1 1 390px; gap: 14px; min-width: 0; }
+.plugin-toolbar-actions { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.plugin-file-view { display: inline-flex; align-items: center; gap: 2px; padding: 3px; border: 1px solid var(--plugin-line); border-radius: 8px; background: var(--bg); }
+.plugin-file-view button { min-height: 26px; padding: 3px 9px; border: 0; border-radius: 5px; background: transparent; color: var(--text3); font-size: 11px; line-height: 1.5; white-space: nowrap; transition: background .15s, color .15s, box-shadow .15s; }
+.plugin-file-view button:hover { color: var(--text); }
+.plugin-file-view button.active { background: var(--bg2); color: var(--text); font-weight: 600; box-shadow: 0 1px 4px color-mix(in srgb, var(--text) 9%, transparent); }
+.plugin-tool-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--plugin-line);
+  border-radius: 8px;
+  background: var(--bg2);
+  color: var(--text2);
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color .15s, background .15s, color .15s;
 }
-.p-search-icon {
-  position:absolute;
-  left:9px;
-  top:50%;
-  transform:translateY(-50%);
-  color:var(--text3);
-  pointer-events:none
+.plugin-tool-button:hover, .plugin-tool-button:focus-within { border-color: color-mix(in srgb, var(--accent) 32%, var(--plugin-line)); color: var(--accent); background: var(--accent-soft); }
+.plugin-tool-button:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+.plugin-icon-button, .plugin-action-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text2);
+  transition: background .15s, color .15s;
 }
-.p-search {
-  width:100%;
-  height:32px;
-  box-sizing:border-box;
-  background:var(--bg);
-  color:var(--text);
-  border:1px solid var(--border);
-  border-radius:6px;
-  padding:0 10px 0 28px;
-  font-size:13px;
-  outline:none
+.plugin-icon-button { width: 34px; height: 34px; border: 1px solid var(--plugin-line); }
+.plugin-icon-button:hover:not(:disabled), .plugin-action-button:hover:not(:disabled), .plugin-action-button.active { background: var(--accent-soft); color: var(--accent); }
+.plugin-icon-button:disabled, .plugin-action-button:disabled { cursor: not-allowed; opacity: .4; }
+.plugin-action-button.danger:hover:not(:disabled) { background: color-mix(in srgb, #ff453a 10%, transparent); color: #ff6258; }
+.plugin-items { flex: 1; min-height: 0; overflow: auto; padding: 16px 18px 20px; scrollbar-gutter: stable; }
+.plugin-entry { margin-bottom: 9px; border: 1px solid var(--plugin-line); border-radius: 12px; background: var(--bg2); transition: border-color .15s, box-shadow .15s, background .15s; }
+.plugin-entry:hover { border-color: color-mix(in srgb, var(--accent) 22%, var(--plugin-line)); }
+.plugin-entry.expanded { border-color: color-mix(in srgb, var(--accent) 32%, var(--plugin-line)); box-shadow: 0 2px 12px color-mix(in srgb, var(--text) 4%, transparent); }
+.plugin-entry.inactive .plugin-entry-icon { opacity: .55; }
+.plugin-entry-head { display: flex; align-items: center; gap: 10px; min-height: 76px; padding: 13px 14px 13px 10px; cursor: pointer; }
+.plugin-expand-button { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 22px; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--text3); }
+.plugin-expand-button:hover { background: var(--bg3); color: var(--accent); }
+.plugin-expand-button svg { transition: transform .18s; }
+.plugin-expand-button svg.rotated { transform: rotate(90deg); }
+.plugin-entry-icon { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 34px; width: 34px; height: 34px; border-radius: 10px; background: var(--bg3); color: var(--text); }
+.plugin-entry-icon.module { background: color-mix(in srgb, #9a7bff 14%, var(--bg3)); color: #a58aff; }
+.plugin-entry-main { flex: 1; min-width: 0; }
+.plugin-entry-title { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
+.plugin-entry-title strong { max-width: 100%; }
+.plugin-entry-title strong { overflow: hidden; color: var(--text); font-size: 13px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.plugin-tag, .module-tag, .neutral-tag, .status-tag, .version-tag, .format-tag { display: inline-flex; align-items: center; flex-shrink: 0; min-height: 19px; padding: 1px 6px; border-radius: 5px; font-size: 10px; line-height: 1.5; white-space: nowrap; }
+.plugin-tag { background: color-mix(in srgb, var(--accent) 13%, var(--bg3)); color: var(--accent); }
+.module-tag { background: color-mix(in srgb, #9a7bff 15%, var(--bg3)); color: #a58aff; }
+.neutral-tag, .version-tag { background: var(--bg3); color: var(--text3); }
+.status-tag.online { background: color-mix(in srgb, var(--success, #27ae60) 12%, var(--bg3)); color: var(--success, #27ae60); }
+.status-tag.offline { background: color-mix(in srgb, var(--text3) 13%, var(--bg3)); color: var(--text3); }
+.plugin-entry-meta { display: flex; align-items: center; gap: 8px; min-width: 0; margin-top: 5px; color: var(--plugin-muted); font-size: 11px; }
+.plugin-entry-meta > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plugin-entry-meta a { display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0; color: var(--accent); text-decoration: none; }
+.plugin-entry-meta a:hover { text-decoration: underline; }
+.plugin-entry-actions { display: flex; align-items: center; gap: 3px; flex-shrink: 0; }
+.plugin-entry-actions > .version-tag { margin-right: 3px; }
+.plugin-switch { position: relative; display: inline-flex; flex-shrink: 0; width: 28px; height: 17px; margin: 0 4px; cursor: pointer; }
+.plugin-switch input { position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.plugin-switch input:disabled { cursor: not-allowed; }
+.plugin-switch span { position: absolute; inset: 0; border-radius: 10px; background: var(--bg3); pointer-events: none; transition: background .15s; }
+.plugin-switch span::after { position: absolute; top: 3px; left: 3px; width: 11px; height: 11px; border-radius: 50%; background: var(--text3); content: ''; transition: transform .15s, background .15s; }
+.plugin-switch input:checked + span { background: color-mix(in srgb, var(--accent) 65%, var(--bg3)); }
+.plugin-switch input:checked + span::after { transform: translateX(11px); background: #fff; }
+.plugin-switch input:disabled + span { opacity: .45; cursor: not-allowed; }
+.plugin-switch input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 3px; }
+.plugin-switch.small { width: 25px; height: 15px; margin: 0 2px; }
+.plugin-switch.small span::after { width: 9px; height: 9px; }
+.plugin-switch.small input:checked + span::after { transform: translateX(10px); }
+.plugin-entry-detail { margin: 0 12px 12px 51px; padding: 2px 0 0; border-top: 1px solid var(--plugin-line); }
+.plugin-detail-block { padding: 12px 0 2px; }
+.plugin-detail-block + .plugin-detail-block { border-top: 1px solid var(--plugin-line); }
+.plugin-detail-heading { display: flex; align-items: center; gap: 7px; margin-bottom: 8px; color: var(--text2); font-size: 11px; font-weight: 650; }
+.plugin-detail-heading small { display: inline-flex; min-width: 18px; justify-content: center; padding: 1px 5px; border-radius: 5px; background: var(--bg3); color: var(--text3); font-size: 10px; font-weight: 500; }
+.plugin-command-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.plugin-command { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; padding: 5px 8px; border: 1px solid var(--plugin-line); border-radius: 7px; background: var(--bg); color: var(--text2); font-size: 11px; }
+.plugin-command.owner { border-color: color-mix(in srgb, #f39c12 28%, var(--plugin-line)); color: #d99015; }
+.plugin-command.group { border-color: color-mix(in srgb, var(--accent) 28%, var(--plugin-line)); color: var(--accent); }
+.plugin-file-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 38px; padding: 5px 7px; border-top: 1px solid color-mix(in srgb, var(--plugin-line) 75%, transparent); }
+.plugin-file-row:first-of-type { border-top: 0; }
+.plugin-file-info { display: flex; align-items: center; gap: 7px; min-width: 0; color: var(--text2); }
+.plugin-file-info > svg { flex-shrink: 0; color: var(--text3); }
+.plugin-file-info strong { overflow: hidden; color: var(--text2); font-size: 12px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.plugin-file-info small { color: var(--text3); font-size: 10px; overflow-wrap: anywhere; }
+.plugin-file-meta { overflow: hidden; color: var(--text3); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.plugin-file-disabled { opacity: .45; }
+.plugin-file-actions { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+.format-tag { padding: 1px 5px; background: var(--bg3); color: var(--text3); font-size: 9px; }
+.format-tag.fmt-json { color: #d59b43; }
+.format-tag.fmt-yaml { color: #6db1ec; }
+.plugin-mini-tag { display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 6px; border: 0; border-radius: 6px; background: transparent; color: var(--text3); font-size: 10px; }
+.plugin-mini-tag:hover, .plugin-mini-tag.active { background: var(--accent-soft); color: var(--accent); }
+.plugin-empty-inline { padding: 7px; color: var(--text3); font-size: 11px; }
+.plugin-bot-panel { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 0 12px 10px 51px; padding: 9px 10px; border: 1px solid var(--plugin-line); border-radius: 9px; background: var(--bg); }
+.plugin-bot-panel.file-level { margin: 0 0 7px; border-radius: 7px; }
+.plugin-detail-label { display: inline-flex; align-items: baseline; gap: 6px; width: 100%; color: var(--text2); font-size: 11px; font-weight: 600; }
+.plugin-detail-label span { color: var(--text3); font-size: 10px; font-weight: 400; }
+.plugin-bot-item { display: inline-flex; align-items: center; gap: 6px; min-height: 26px; padding: 3px 7px 3px 5px; border: 1px solid var(--plugin-line); border-radius: 7px; background: var(--bg2); color: var(--text2); font-size: 11px; cursor: pointer; }
+.plugin-bot-item:hover { border-color: color-mix(in srgb, var(--accent) 35%, var(--plugin-line)); }
+.plugin-bot-item.deleted { opacity: .72; }
+.plugin-bot-item.locked { cursor: not-allowed; }
+.plugin-bot-item input { accent-color: var(--accent); }
+.plugin-bot-avatar { width: 18px; height: 18px; border-radius: 5px; object-fit: cover; }
+.plugin-bot-avatar.deleted-avatar { display: inline-flex; align-items: center; justify-content: center; background: var(--bg3); color: var(--text3); }
+.plugin-bot-deleted, .plugin-bot-id { color: var(--text3); font-size: 9px; }
+.plugin-state { display: flex; align-items: center; justify-content: center; gap: 9px; flex: 1; color: var(--text3); font-size: 12px; }
+.plugin-state-empty { flex-direction: column; gap: 6px; }
+.plugin-state-empty svg { color: var(--text3); }
+.plugin-state-empty strong { color: var(--text2); font-size: 13px; font-weight: 600; }
+.plugin-state-empty span { font-size: 11px; }
+.reload-spinning { animation: plugin-spin .8s linear infinite; }
+@keyframes plugin-spin { to { transform: rotate(360deg); } }
+
+@media (max-width: 900px) {
+  .plugin-toolbar { padding-inline: 14px; }
+  .plugin-items { padding-inline: 14px; }
 }
-.p-search:focus {
-  border-color:var(--accent)
+@media (max-width: 700px) {
+  .plugins-page { height: auto; min-height: calc(100vh - 78px); }
+  .plugin-layout { flex-direction: column; overflow: visible; border-radius: 14px; }
+  .plugin-toolbar { gap: 10px; padding: 12px; border-radius: 14px 14px 0 0; }
+  .plugin-toolbar-filters { flex-basis: 100%; flex-wrap: wrap; gap: 10px; }
+  .plugin-mode-tabs { flex: 1; justify-content: space-between; }
+  .plugin-mode-tabs button { flex: 1; }
+  .plugin-search { flex: 1 1 180px; max-width: none; }
+  .plugin-toolbar-actions { flex: 1; flex-wrap: wrap; gap: 6px; }
+  .plugin-file-view { margin-right: auto; }
+  .plugin-file-view button { padding-inline: 8px; }
+  .plugin-items { overflow: visible; padding: 10px 12px 14px; }
+  .plugin-entry-head { flex-wrap: wrap; gap: 8px; padding-right: 8px; }
+  .plugin-entry-main { min-width: calc(100% - 94px); }
+  .plugin-entry-actions { width: 100%; justify-content: flex-end; padding-left: 32px; }
+  .plugin-entry-actions > .version-tag { margin-right: auto; }
+  .plugin-entry-detail { margin-left: 10px; margin-right: 10px; }
+  .plugin-bot-panel { margin-left: 10px; margin-right: 10px; }
 }
+@media (max-width: 440px) {
+  .plugin-mode-tabs, .plugin-search { flex-basis: 100%; }
+  .plugin-tool-button { justify-content: center; gap: 5px; padding-inline: 8px; font-size: 11px; }
+  .plugin-file-view { flex: 1 1 100%; margin: 0 0 2px; }
+  .plugin-file-view button { flex: 1; }
+  .plugin-toolbar-actions > .plugin-tool-button { flex: 1; }
+  .plugin-entry-meta { display: block; line-height: 1.45; }
+  .plugin-entry-meta > span { display: block; max-width: 100%; }
+  .plugin-entry-meta a { margin-top: 2px; }
+  .plugin-file-row { align-items: flex-start; }
+  .plugin-file-info { flex-wrap: wrap; }
+}
+
+/* File and configuration dialogs. */
 .p-btn {
   display:flex;
   align-items:center;
@@ -624,15 +734,6 @@ onMounted(() => { appStore.fetchBots(); fetchAll() })
   color:#fff;
   border-color:var(--accent)
 }
-.upload-btn {
-  background:var(--accent);
-  color:#fff;
-  border-color:var(--accent);
-  cursor:pointer
-}
-.upload-btn:hover {
-  opacity:.9
-}
 .save-btn {
   background:var(--accent);
   color:#fff;
@@ -640,91 +741,6 @@ onMounted(() => { appStore.fetchBots(); fetchAll() })
 }
 .save-btn:hover {
   opacity:.9
-}
-.plugins-list {
-  display:flex;
-  flex-direction:column;
-  gap:5px;
-  padding-bottom:40px
-}
-.p-loading,.p-empty {
-  text-align:center;
-  color:var(--text3);
-  padding:40px 0;
-  font-size:13px
-}
-.p-empty-inline {
-  text-align:center;
-  color:var(--text3);
-  padding:12px 0;
-  font-size:12px
-}
-.p-dir {
-  background:var(--bg2);
-  border:1px solid var(--border);
-  border-radius:var(--radius-sm);
-  box-shadow:var(--shadow-sm);
-  overflow:clip
-}
-.p-dir-head {
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  padding:10px 14px;
-  cursor:pointer;
-  -webkit-user-select:none;
-  -moz-user-select:none;
-  user-select:none;
-  gap:8px
-}
-.p-dir-head:hover {
-  background:var(--bg3)
-}
-.p-dir-left {
-  display:flex;
-  align-items:center;
-  gap:6px;
-  min-width:0
-}
-.p-dir-name {
-  font-size:13px;
-  font-weight:600;
-  color:var(--text)
-}
-.p-dir-right {
-  display:flex;
-  align-items:center;
-  gap:6px;
-  flex-shrink:0
-}
-.p-dir-desc {
-  font-size:11px;
-  color:var(--text3);
-  max-width:300px;
-  overflow:hidden;
-  text-overflow:ellipsis;
-  white-space:nowrap
-}
-.p-meta-author {
-  font-size:11px;
-  color:var(--accent);
-  opacity:.8;
-  white-space:nowrap
-}
-.p-meta-link {
-  display:inline-flex;
-  align-items:center;
-  justify-content:center;
-  width:22px;
-  height:22px;
-  border-radius:4px;
-  color:var(--text3);
-  text-decoration:none;
-  transition:.15s
-}
-.p-meta-link:hover {
-  color:var(--accent);
-  background:rgba(var(--accent-rgb,99,102,241),.1)
 }
 .p-tag {
   font-size:10px;
@@ -790,232 +806,6 @@ onMounted(() => { appStore.fetchBots(); fetchAll() })
 .p-tag.fmt-text,.p-tag.fmt-raw {
   background:var(--bg3);
   color:var(--text3)
-}
-.p-dir-cmds {
-  display:flex;
-  flex-wrap:wrap;
-  gap:4px;
-  padding:0 14px 8px
-}
-.p-cmd-tag {
-  font-size:11px;
-  padding:1px 7px;
-  border-radius:4px;
-  background:rgba(var(--accent-rgb,99,102,241),.1);
-  color:var(--accent);
-  white-space:nowrap;
-  display:inline-flex;
-  align-items:center;
-  gap:3px
-}
-.p-cmd-tag.owner {
-  background:#ffaa001f;
-  color:#e8a000
-}
-.p-cmd-tag.group {
-  background:#34c7591a;
-  color:#34c759
-}
-.p-dir-files {
-  border-top:1px solid var(--border)
-}
-.p-file {
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  padding:6px 14px 6px 28px;
-  border-bottom:1px solid var(--border);
-  gap:8px
-}
-.p-file:last-child {
-  border-bottom:none
-}
-.p-file-greyed {
-  opacity:.4;
-  pointer-events:none
-}
-.p-file-greyed .p-act-btn {
-  pointer-events:auto;
-  opacity:1
-}
-.p-file-left {
-  display:flex;
-  align-items:center;
-  gap:6px;
-  min-width:0
-}
-.p-file-name {
-  font-size:12px;
-  color:var(--text);
-  font-family:Cascadia Code,Fira Code,monospace
-}
-.p-file-size,.p-file-time {
-  font-size:10px;
-  color:var(--text3)
-}
-.p-file-actions {
-  display:flex;
-  align-items:center;
-  gap:6px;
-  flex-shrink:0;
-  position:relative
-}
-.p-switch-sm {
-  position:relative;
-  display:inline-block;
-  width:30px;
-  height:16px;
-  cursor:pointer;
-  flex-shrink:0
-}
-.p-switch-sm input {
-  display:none
-}
-.p-switch-sm span {
-  position:absolute;
-  top:0;
-  right:0;
-  bottom:0;
-  left:0;
-  background:var(--border);
-  border-radius:8px;
-  transition:.2s
-}
-.p-switch-sm span:after {
-  content:"";
-  position:absolute;
-  left:2px;
-  top:2px;
-  width:12px;
-  height:12px;
-  background:#fff;
-  border-radius:50%;
-  transition:.2s
-}
-.p-switch-sm input:checked+span {
-  background:var(--accent)
-}
-.p-switch-sm input:checked+span:after {
-  left:16px
-}
-.bot-bind-tag {
-  cursor:pointer;
-  display:inline-flex;
-  align-items:center;
-  gap:3px;
-  background:var(--bg3);
-  color:var(--text3);
-  transition:.15s
-}
-.bot-bind-tag:hover {
-  color:var(--accent);
-  background:rgba(var(--accent-rgb,99,102,241),.1)
-}
-.bot-bind-tag.active {
-  background:rgba(var(--accent-rgb,99,102,241),.15);
-  color:var(--accent)
-}
-.bot-bind-tag.sm {
-  font-size:10px;
-  padding:1px 5px
-}
-.bot-bind-panel {
-  padding:8px 14px;
-  background:var(--bg);
-  border-top:1px solid var(--border)
-}
-.bot-bind-panel.file-level {
-  padding:8px 14px 8px 28px;
-  border-bottom:1px solid var(--border)
-}
-.bot-bind-title {
-  font-size:11px;
-  color:var(--text3);
-  margin-bottom:6px
-}
-.bot-bind-item {
-  display:flex;
-  align-items:center;
-  gap:6px;
-  padding:4px 0;
-  cursor:pointer;
-  font-size:12px;
-  color:var(--text)
-}
-.bot-bind-item input[type=checkbox] {
-  width:14px;
-  height:14px;
-  accent-color:var(--accent);
-  cursor:pointer
-}
-.bot-bind-item.deleted {
-  color:var(--text3)
-}
-.bot-bind-item.locked {
-  cursor:not-allowed;
-  opacity:.65
-}
-.bot-bind-item.locked input[type=checkbox] {
-  cursor:not-allowed
-}
-.bot-bind-avatar {
-  width:18px;
-  height:18px;
-  border-radius:50%
-}
-.bot-bind-avatar.deleted-avatar {
-  display:grid;
-  place-items:center;
-  flex:0 0 18px;
-  color:var(--text3);
-  background:var(--bg3);
-  border:1px solid var(--border);
-  filter:grayscale(1)
-}
-.bot-bind-deleted {
-  padding:0 4px;
-  border-radius:3px;
-  color:var(--text3);
-  background:var(--bg3);
-  font-size:9px
-}
-.bot-bind-id {
-  font-size:10px;
-  color:var(--text3);
-  margin-left:auto;
-  font-family:monospace
-}
-.p-act-btn {
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  width:28px;
-  height:28px;
-  border-radius:6px;
-  border:1px solid var(--border);
-  background:transparent;
-  color:var(--text2);
-  cursor:pointer
-}
-.p-act-btn.sm {
-  width:24px;
-  height:24px
-}
-.p-act-btn:hover {
-  color:var(--accent);
-  border-color:var(--accent)
-}
-.p-act-btn:disabled {
-  opacity:.4;
-  cursor:default;
-  color:var(--text3);
-  border-color:var(--border)
-}
-.reload-spinning {
-  animation:plugin-reload-spin .7s linear infinite
-}
-@keyframes plugin-reload-spin {
-  to { transform:rotate(360deg) }
 }
 .p-modal-overlay {
   position:fixed;
@@ -1147,76 +937,6 @@ onMounted(() => { appStore.fetchBots(); fetchAll() })
   box-shadow:0 1px 4px rgba(0,0,0,.2)
 }
 @media(max-width:767px) {
-  .plugins-toolbar {
-  flex-wrap:wrap
-}
-.p-search {
-  max-width:none;
-  width:100%;
-  order:10
-}
-.p-dir-head {
-  flex-direction:column;
-  align-items:flex-start;
-  padding:10px 12px;
-  gap:8px
-}
-.p-dir-left {
-  flex-wrap:wrap;
-  gap:4px;
-  width:100%
-}
-.p-dir-name {
-  flex-shrink:0;
-  max-width:100%;
-  overflow:hidden;
-  text-overflow:ellipsis;
-  white-space:nowrap
-}
-.p-dir-right {
-  width:100%;
-  flex-wrap:wrap;
-  gap:6px
-}
-.p-meta-author {
-  display:none
-}
-.p-select {
-  min-width:0;
-  flex:1
-}
-.toolbar-left {
-  flex-wrap:wrap
-}
-.toolbar-left .p-select {
-  flex:1 1 auto;
-  min-width:112px
-}
-.plugins-toolbar .p-btn {
-  flex-shrink:0
-}
-.p-dir-desc {
-  max-width:none;
-  width:100%;
-  white-space:normal;
-  line-height:1.4
-}
-.p-file {
-  flex-wrap:wrap;
-  padding:8px 12px;
-  gap:6px
-}
-.p-file-left {
-  flex:1;
-  min-width:0;
-  flex-wrap:wrap
-}
-.p-file-time {
-  display:none
-}
-.p-file-actions {
-  width:auto
-}
 .p-modal {
   width:100vw;
   height:100vh;
@@ -1250,17 +970,7 @@ onMounted(() => { appStore.fetchBots(); fetchAll() })
 .cfg-visual {
   padding:10px 12px
 }
-.p-dir-cmds {
-  padding:6px 12px
 }
-.bot-bind-panel {
-  padding:8px 12px
-}
-.bot-bind-panel.file-level {
-  padding:8px 12px
-}
-}
-
 </style>
 
 <style>

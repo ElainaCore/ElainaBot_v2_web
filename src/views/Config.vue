@@ -5,152 +5,86 @@ import yaml from 'js-yaml'
 import axios from '../utils/axios'
 import { responseMessage, responsePayload, responseOk } from '../utils/api'
 import SvgIcon from '../components/SvgIcon.vue'
+import ConfigField from '../components/config/ConfigField.vue'
+import TemplateEditor from './config/TemplateEditor.vue'
+import { BOT_SECTIONS, SETTINGS_SECTIONS, getFieldValue, setFieldValue } from './config/fields'
 
 const message = useMessage()
-const loading = ref(false)
-const saving = ref(false)
-const dirty = ref(false)
+const loading = ref(true)
+const loaded = ref(false)
+const savingFile = ref('')
+const loadError = ref('')
 const activeFile = ref('bot')
 const viewMode = ref('visual')
 const raw = reactive({ bot: '', settings: '', templates: '' })
+const saved = reactive({ bot: '', settings: '', templates: '' })
 const botIndex = ref(0)
-const buttonTexts = reactive({})
-
+const templateInvalid = ref(false)
+const revision = ref(0)
+const contentRef = ref(null)
+const sectionRefs = new Map()
+const focusedSection = ref('')
 const TABS = [
-  { key: 'bot', label: 'bot.yaml' },
-  { key: 'settings', label: 'settings.yaml' },
-  { key: 'templates', label: 'templates.yaml' },
+  { key: 'bot', label: '机器人配置', icon: 'link' },
+  { key: 'settings', label: '全局设置', icon: 'settings' },
+  { key: 'templates', label: '消息模板', icon: 'chatbubbles' },
 ]
-
-const VARIABLES = ['{user_id}', '{user_count}', '{reason}', '{error_code}', '{error_message}', '{appid}', '{group_id}']
-
-const TEMPLATE_LABELS = {
-  welcome: '群欢迎 (机器人被邀请入群)',
-  user_welcome: '新用户首次交互',
-  friend_add: '添加好友自动回复',
-  group_only: '群聊专用命令提示',
-  default: '无指令回复 (无匹配命令时)',
-  owner_only: '仅主人可用命令提示',
-  maintenance: '维护模式提示',
-  blacklist: '用户黑名单提示',
-  group_blacklist: '群黑名单提示',
-  api_error: 'API 错误提示',
+const activeTab = computed(() => TABS.find(tab => tab.key === activeFile.value))
+const changedFiles = computed(() => TABS.filter(tab => raw[tab.key] !== saved[tab.key] || (tab.key === 'templates' && templateInvalid.value)).map(tab => tab.key))
+const dirty = computed(() => changedFiles.value.includes(activeFile.value))
+const sections = computed(() => activeFile.value === 'bot' ? BOT_SECTIONS : SETTINGS_SECTIONS)
+function parse(source) { try { const value = yaml.load(source); return value && typeof value === 'object' && !Array.isArray(value) ? value : {} } catch { return {} } }
+function dump(value) { return yaml.dump(value, { lineWidth: -1, noRefs: true, sortKeys: false, quotingType: '"' }) }
+function validate(source) {
+  try {
+    const value = yaml.load(source)
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return '配置必须是 YAML 键值对象'
+    return ''
+  } catch (error) { return error.message }
 }
-
-function parse(text) { try { return yaml.load(text) || {} } catch { return {} } }
-function dump(obj) { try { return yaml.dump(obj, { lineWidth: -1, noRefs: true, sortKeys: false, quotingType: '"' }) } catch { return '' } }
-
-function _ys(v) { if (v == null) return 'null'; if (typeof v === 'boolean') return v ? 'true' : 'false'; if (typeof v === 'number') return String(v); if (typeof v !== 'string') return String(v); if (!v) return "''"; if (v === '|') return "'|'"; if (v.includes('\n')) return '"' + v.replace(/\\/g,'\\\\').replace(/"/g,'\\"').replace(/\n/g,'\\n') + '"'; if (/[:#[\]{}|>&*!?,'"\\ ]/.test(v) || v[0] === ' ' || v[0] === '-' || v.endsWith(' ')) return '"' + v.replace(/\\/g,'\\\\').replace(/"/g,'\\"') + '"'; return v }
-function _serBtns(btns) { return '[' + btns.map(r => Array.isArray(r) ? '[' + r.filter(b => b && typeof b === 'object').map(b => '{' + Object.entries(b).map(([k,v]) => k+': '+_ys(v)).join(', ') + '}').join(',') + ']' : '').join(',') + ']' }
-function _multiline(v, indent) { const pad = '  '.repeat(indent); const ls = []; v.replace(/\n$/, '').split('\n').forEach(ln => ls.push(ln.trim() ? pad + ln : '')); return ls }
-function _serVal(k, v, indent) { if (k === 'buttons' && Array.isArray(v)) return ['  '.repeat(indent) + k + ': ' + _serBtns(v)]; if (typeof v === 'string' && v.includes('\n')) return ['  '.repeat(indent) + k + ': |', ..._multiline(v, indent + 1)]; return ['  '.repeat(indent) + k + ': ' + _ys(v)] }
-function dumpTemplates(obj) {
-  const lines = []
-  for (const [key, val] of Object.entries(obj)) {
-    if (val == null) continue
-    if (typeof val === 'string') { if (val.includes('\n')) { lines.push(key + ': |', ..._multiline(val, 1)) } else { lines.push(key + ': ' + _ys(val)) }; lines.push(''); continue }
-    if (Array.isArray(val)) { lines.push(key + ':'); val.forEach(item => { if (typeof item !== 'object') return; let first = true; for (const [k,v] of Object.entries(item)) { const pfx = first ? '  - ' : '    '; first = false; if (k === 'buttons' && Array.isArray(v)) { lines.push(pfx + k + ': ' + _serBtns(v)) } else if (typeof v === 'string' && v.includes('\n')) { lines.push(pfx + k + ': |'); _multiline(v, 3).forEach(ln => lines.push(ln)) } else { lines.push(pfx + k + ': ' + _ys(v)) } } }); lines.push(''); continue }
-    if (typeof val === 'object') { lines.push(key + ':'); for (const [k,v] of Object.entries(val)) _serVal(k, v, 1).forEach(ln => lines.push(ln)); lines.push(''); continue }
-    lines.push(key + ': ' + _ys(val), '')
-  }
-  return lines.join('\n')
-}
-
-function dumpBot(obj) {
-  let r = dump(obj)
-  r = r.replace(/^(bots:)/m, '# ===== 机器人配置 =====\n# 支持多机器人，每个机器人独立配置\n# 修改后自动热加载，无需重启\n\n$1')
-    .replace(/^(\s+)(websocket:)/gm, '$1# WebSocket 连接配置\n$1$2')
-    .replace(/^(\s+)(identify:)/gm, '$1# 鉴权(identify)上报的客户端名称(WS 握手 UA, 前端显示)\n$1$2')
-    .replace(/^(\s+)(message:)/gm, '$1# 消息处理\n$1$2')
-    .replace(/^(\s+)(identity:)/gm, '$1# 用户ID模式\n$1$2')
-    .replace(/^(\s+)(welcome:)/gm, '$1# 欢迎消息\n$1$2')
-    .replace(/^(\s+)(maintenance:)/gm, '$1# 维护模式\n$1$2')
-    .replace(/^(\s+)(dedup:)/gm, '$1# 事件去重\n$1$2')
-    .replace(/^(\s+)(blacklist:)/gm, '$1# 黑名单\n$1$2')
-  return r
-}
-
-// Computed
-const bots = computed(() => {
-  const d = parse(raw.bot)
-  const list = Array.isArray(d?.bots) ? d.bots : []
-  if (botIndex.value >= list.length) botIndex.value = 0
-  return list
-})
+const yamlError = computed(() => validate(raw[activeFile.value]))
+const bots = computed(() => { const value = parse(raw.bot).bots; return Array.isArray(value) ? value : [] })
 const currentBot = computed(() => bots.value[botIndex.value] || null)
 const settings = computed(() => parse(raw.settings))
-const templates = computed(() => parse(raw.templates))
-const templateKeys = computed(() => Object.keys(templates.value).filter(k => !k.startsWith('#')))
+const currentData = computed(() => activeFile.value === 'bot' ? currentBot.value : settings.value)
+watch(bots, value => { if (botIndex.value >= value.length) botIndex.value = Math.max(0, value.length - 1) })
+watch(activeFile, () => { focusedSection.value = ''; contentRef.value?.scrollTo(0, 0) })
 
-// IME 组合输入期间跳过更新, 组合结束后重新派发 input 事件提交
-function onCompositionEnd(e) {
-  e.target.dispatchEvent(new Event('input', { bubbles: true }))
+function updateField(field, value) {
+  const data = parse(raw[activeFile.value])
+  const target = activeFile.value === 'bot' ? data.bots?.[botIndex.value] : data
+  if (!target) return
+  setFieldValue(target, field.path, value)
+  raw[activeFile.value] = dump(data)
 }
-
-// Bot config helpers
-function updateBotField(idx, field, event) {
-  if (event.isComposing) return
-  const d = parse(raw.bot)
-  if (!d.bots?.[idx]) return
-  d.bots[idx][field] = field === 'owner_ids'
-    ? event.target.value.split(',').map(s => s.trim()).filter(Boolean)
-    : event.target.value
-  raw.bot = dumpBot(d); dirty.value = true
+function visibleFields(section) { return section.fields.filter(field => !field.when || field.when(currentData.value || {})) }
+function scrollToSection(id) { focusedSection.value = id; sectionRefs.get(id)?.scrollIntoView({ block: 'start', behavior: 'smooth' }) }
+function setMode(mode) {
+  if (mode === 'visual' && yamlError.value) { message.error('请先修正 YAML 格式：' + yamlError.value); return }
+  if (mode === 'yaml' && activeFile.value === 'templates' && templateInvalid.value) { message.error('请先修正模板按钮的 YAML 格式'); return }
+  viewMode.value = mode
 }
-
-function updateBotNested(idx, section, key, value) {
-  const d = parse(raw.bot)
-  if (!d.bots?.[idx]) return
-  if (!d.bots[idx][section]) d.bots[idx][section] = {}
-  d.bots[idx][section][key] = value
-  raw.bot = dumpBot(d); dirty.value = true
-}
-
-
-function updateBotDeepNested(idx, section, subsection, key, value) {
-  const d = parse(raw.bot)
-  if (!d.bots?.[idx]) return
-  if (!d.bots[idx][section]) d.bots[idx][section] = {}
-  if (!d.bots[idx][section][subsection]) d.bots[idx][section][subsection] = {}
-  d.bots[idx][section][subsection][key] = value
-  raw.bot = dumpBot(d); dirty.value = true
-}
-
-function updateBotNestedStr(idx, section, key, event) { if (event.isComposing) return; updateBotNested(idx, section, key, event.target.value) }
-function updateBotNestedNum(idx, section, key, event) { updateBotNested(idx, section, key, parseInt(event.target.value) || 0) }
-function updateBotNestedList(idx, section, key, event) { if (event.isComposing) return; updateBotNested(idx, section, key, event.target.value.split(',').map(s => s.trim()).filter(Boolean)) }
-
-// 黑名单 {ID: 理由} 映射 <-> 文本 (每行: ID [理由]); 兼容旧数组格式展示
-function blMapToText(m) {
-  if (Array.isArray(m)) return m.join('\n')
-  return Object.entries(m || {}).map(([id, r]) => (r ? `${id} ${r}` : id)).join('\n')
-}
-function updateBotBlacklist(idx, key, event) {
-  if (event.isComposing) return
-  const m = {}
-  event.target.value.split('\n').map(s => s.trim()).filter(Boolean).forEach(s => {
-    const sp = s.indexOf(' ')
-    if (sp === -1) m[s] = null
-    else m[s.slice(0, sp)] = s.slice(sp + 1).trim() || null
-  })
-  updateBotNested(idx, 'blacklist', key, m)
-}
-
 function addBot() {
-  const d = parse(raw.bot)
-  if (!Array.isArray(d.bots)) d.bots = []
-  d.bots.push({
+  const data = parse(raw.bot)
+  if (!Array.isArray(data.bots)) data.bots = []
+  data.bots.push({
     appid: '', secret: '', api_version: 'new', robot_qq: '', owner_ids: [],
-    websocket: { enabled: true, subscribe_channel_events: false, custom_url: '', reconnect_interval: 5, max_reconnects: -1, identify: { name: '' } },
+    websocket: { enabled: true, subscribe_channel_events: false, custom_url: '', reconnect_interval: 5, max_reconnects: -1, identify: { name: 'ElainaBot' } },
     message: { use_markdown: true, markdown_suffix: '', button_enter_to_send: false, send_default_response: false, default_response_excluded_regex: [] },
     identity: { use_union_id_for_group: false, use_union_id_for_channel: false },
     welcome: { group_welcome: false, new_user_welcome: false, friend_add_message: false },
-    maintenance: { enabled: false, reply: true },
-    dedup: { enabled: false },
-    blacklist: { user_list: {}, group_list: {} },
+    maintenance: { enabled: false, reply: true }, dedup: { enabled: false }, blacklist: { user_list: {}, group_list: {} },
     non_at_message: { enabled: true, group_whitelist: [], ignore_at_other_bot: true, ignore_at_other_user: true, ignore_bot_sender: true, quiet_at_self: false, strip_bot_name_at: false },
   })
-  raw.bot = dumpBot(d); botIndex.value = d.bots.length - 1; dirty.value = true
+  raw.bot = dump(data)
+  botIndex.value = data.bots.length - 1
+}
+function removeBot() {
+  if (!confirm(`确定删除机器人 #${botIndex.value + 1}？保存后生效。`)) return
+  const data = parse(raw.bot)
+  if (!data.bots?.[botIndex.value]) return
+  data.bots.splice(botIndex.value, 1)
+  raw.bot = dump(data)
 }
 
 // 扫码快捷绑定机器人
@@ -193,7 +127,7 @@ async function pollQrBind() {
       stopQrBindPoll()
       qrBind.status = 'completed'; qrBind.appid = data.appid || ''
       message.success(`机器人 ${data.appid} ${data.created ? '接入成功' : '凭据已更新'}，配置已自动保存并热重载`)
-      await fetchConfig()
+      await fetchConfig(true, true)
       const idx = bots.value.findIndex(b => String(b.appid || '') === String(data.appid || ''))
       if (idx >= 0) botIndex.value = idx
       setTimeout(() => { qrBind.show = false }, 1200)
@@ -204,792 +138,126 @@ async function pollQrBind() {
   } catch {}
 }
 
-function removeBot() {
-  if (!confirm(`确定删除机器人 #${botIndex.value + 1}？`)) return
-  const d = parse(raw.bot)
-  if (!d.bots?.[botIndex.value]) return
-  d.bots.splice(botIndex.value, 1)
-  raw.bot = dumpBot(d)
-  if (botIndex.value >= d.bots.length) botIndex.value = Math.max(0, d.bots.length - 1)
-  dirty.value = true
-}
-
-// Settings helpers
-function updateSetting(section, key, event) {
-  if (event.isComposing) return
-  const d = parse(raw.settings)
-  if (!d[section]) d[section] = {}
-  d[section][key] = event.target.value
-  raw.settings = dump(d); dirty.value = true
-}
-
-function updateSettingNum(section, key, event) {
-  const d = parse(raw.settings)
-  if (!d[section]) d[section] = {}
-  d[section][key] = parseInt(event.target.value) || 0
-  raw.settings = dump(d); dirty.value = true
-}
-
-function updateSettingBool(section, key, event) {
-  const d = parse(raw.settings)
-  if (!d[section]) d[section] = {}
-  d[section][key] = event.target.checked
-  raw.settings = dump(d); dirty.value = true
-}
-
-// Template helpers
-function getTemplateField(key, field) {
-  const t = templates.value[key]
-  if (!t) return ''
-  return typeof t === 'string' ? (field === 'markdown' ? t : '') : (t[field] || '')
-}
-
-function updateTemplateField(key, field, event) {
-  if (event.isComposing) return
-  const d = parse(raw.templates)
-  let t = d[key]
-  if (typeof t === 'string') { d[key] = { markdown: t }; t = d[key] }
-  else if (!t || typeof t !== 'object') { d[key] = {}; t = d[key] }
-  t[field] = event.target.value
-  raw.templates = dumpTemplates(d); dirty.value = true
-}
-
-function getButtons(key) {
-  const t = templates.value[key]
-  if (!t || typeof t === 'string' || !t.buttons) return ''
-  try {
-    const d = yaml.dump(t.buttons, { lineWidth: -1, noRefs: true, flowLevel: 0 }).trim()
-    return d.startsWith('[') ? d.slice(1, -1) : d
-  } catch { return '' }
-}
-
-function syncButtonTexts() {
-  for (const key of templateKeys.value) {
-    if (!(key in buttonTexts)) buttonTexts[key] = getButtons(key)
-  }
-}
-
-function updateButtonText(key, event) {
-  buttonTexts[key] = event.target.value
-  dirty.value = true
-}
-
-function commitButtons(key) {
-  const d = parse(raw.templates)
-  let t = d[key]
-  if (typeof t === 'string') { d[key] = { markdown: t }; t = d[key] }
-  else if (!t || typeof t !== 'object') { d[key] = {}; t = d[key] }
-  const val = (buttonTexts[key] || '').trim()
-  if (!val) { delete t.buttons }
-  else { try { t.buttons = yaml.load('[' + val + ']') } catch {} }
-  raw.templates = dumpTemplates(d)
-}
-
-// API
-async function fetchConfig() {
+async function fetchConfig(force = false, onlyBot = false) {
+  if (!force && changedFiles.value.length && !confirm('重新加载会丢弃所有未保存的修改，是否继续？')) return
   loading.value = true
+  loadError.value = ''
   try {
-    const data = responsePayload(await axios.get('/api/config'))
-    raw.bot = data.bot || ''
-    raw.settings = data.settings || ''
-    raw.templates = data.templates || ''
-    dirty.value = false
-    // 重置 buttonTexts 缓存
-    Object.keys(buttonTexts).forEach(k => delete buttonTexts[k])
-    syncButtonTexts()
-  } catch { message.error('获取配置失败') }
+    const response = await axios.get('/api/config')
+    if (!responseOk(response)) throw new Error(responseMessage(response, '获取配置失败'))
+    const data = responsePayload(response)
+    for (const file of onlyBot ? ['bot'] : ['bot', 'settings', 'templates']) raw[file] = saved[file] = data[file] || ''
+    if (!onlyBot) { templateInvalid.value = false; revision.value++ }
+    loaded.value = true
+  } catch (error) { loadError.value = error.normalizedMessage || error.message || '获取配置失败' }
   finally { loading.value = false }
 }
-
 async function saveConfig() {
-  saving.value = true
-  // Commit all button texts before saving templates
-  if (activeFile.value === 'templates') {
-    for (const key of templateKeys.value) commitButtons(key)
+  if (!dirty.value || loading.value || savingFile.value) return
+  if (activeFile.value === 'templates' && templateInvalid.value) { message.error('请先修正模板按钮的 YAML 格式'); return }
+  if (yamlError.value) { message.error('YAML 格式有误：' + yamlError.value); return }
+  if (viewMode.value === 'visual') {
+    const invalid = contentRef.value?.querySelector('input:invalid')
+    if (invalid) { invalid.reportValidity(); return }
   }
+  const file = activeFile.value
+  const content = raw[file]
+  savingFile.value = file
   try {
-    const res = await axios.post('/api/config/save', { file: activeFile.value, content: raw[activeFile.value] })
-    if (responseOk(res)) { message.success('配置已保存，部分更改需要重启生效'); dirty.value = false }
-    else message.error(responseMessage(res, '保存失败'))
-  } catch (e) { message.error('保存失败: ' + (e.normalizedMessage || e.message || '')) }
-  finally { saving.value = false }
+    const response = await axios.post('/api/config/save', { file, content })
+    if (responseOk(response)) { saved[file] = content; message.success(`${file}.yaml 已保存，部分更改需要重启生效`) }
+    else message.error(responseMessage(response, '保存失败'))
+  } catch (error) { message.error('保存失败：' + (error.normalizedMessage || error.message || '请重试')) }
+  finally { savingFile.value = '' }
 }
-
-function switchToYaml() {
-  if (activeFile.value === 'templates') { for (const key of templateKeys.value) commitButtons(key) }
-  viewMode.value = 'yaml'
-}
-
-watch(templateKeys, syncButtonTexts)
-onMounted(fetchConfig)
-onUnmounted(stopQrBindPoll)
+function onKeydown(event) { if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') { event.preventDefault(); saveConfig() } }
+function onBeforeUnload(event) { if (changedFiles.value.length) { event.preventDefault(); event.returnValue = '' } }
+onMounted(() => { fetchConfig(true); window.addEventListener('keydown', onKeydown); window.addEventListener('beforeunload', onBeforeUnload) })
+onUnmounted(() => { stopQrBindPoll(); window.removeEventListener('keydown', onKeydown); window.removeEventListener('beforeunload', onBeforeUnload) })
 </script>
 
 <template>
   <div class="config-page">
-    <div class="config-tabs">
-      <button v-for="tab in TABS" :key="tab.key" :class="['config-tab', { active: activeFile === tab.key }]" @click="activeFile = tab.key">{{ tab.label }}</button>
-      <span class="config-tabs-spacer" />
-      <button :class="['cfg-btn', { active: viewMode === 'visual' }]" @click="viewMode = 'visual'">可视化</button>
-      <button :class="['cfg-btn', { active: viewMode === 'yaml' }]" @click="switchToYaml">YAML</button>
-      <button class="cfg-btn save" @click="saveConfig" :disabled="!dirty || saving">{{ saving ? '保存中...' : '保存' }}</button>
-      <button class="cfg-btn" @click="fetchConfig" :disabled="loading">刷新</button>
-    </div>
-
-    <template v-if="viewMode === 'visual'">
-      <div class="visual-body" @compositionend.capture="onCompositionEnd">
-        <!-- Bot -->
-        <template v-if="activeFile === 'bot'">
-          <div class="bot-picker">
-            <label>选择机器人</label>
-            <select v-if="bots.length" v-model="botIndex">
-              <option v-for="(bot, i) in bots" :key="i" :value="i">机器人 #{{ i + 1 }} — {{ bot.appid || '新机器人' }}</option>
-            </select>
-            <button class="cfg-btn" style="font-size:12px;padding:4px 10px;display:flex;align-items:center;gap:3px" @click="addBot"><SvgIcon name="plus" :size="13" /> 添加</button>
-            <button class="cfg-btn" style="font-size:12px;padding:4px 10px;color:var(--accent);display:flex;align-items:center;gap:3px" @click="startQrBind"><SvgIcon name="plus" :size="13" /> 扫码接入</button>
-            <button v-if="bots.length" class="cfg-btn" style="font-size:12px;padding:4px 10px;color:var(--danger);display:flex;align-items:center;gap:3px" @click="removeBot"><SvgIcon name="minus" :size="13" /> 删除当前</button>
+    <div class="cfg-shell">
+      <header class="cfg-toolbar">
+        <nav class="cfg-files" aria-label="配置文件">
+          <button v-for="tab in TABS" :key="tab.key" class="cfg-file" :class="{ active: activeFile === tab.key }" :aria-pressed="activeFile === tab.key" @click="activeFile = tab.key">
+            <SvgIcon :name="tab.icon" :size="19" />
+            <span><strong>{{ tab.label }}</strong><small>{{ tab.key }}.yaml</small></span>
+            <i v-if="changedFiles.includes(tab.key)" class="cfg-dirty-dot" aria-label="有未保存的修改" />
+          </button>
+        </nav>
+        <div class="cfg-toolbar-actions">
+          <div class="cfg-mode" aria-label="编辑方式">
+            <button :class="{ active: viewMode === 'visual' }" :aria-pressed="viewMode === 'visual'" @click="setMode('visual')"><SvgIcon name="grid" :size="13" />可视化</button>
+            <button :class="{ active: viewMode === 'yaml' }" :aria-pressed="viewMode === 'yaml'" @click="setMode('yaml')"><SvgIcon name="code" :size="14" />YAML</button>
           </div>
-          <div v-if="currentBot" class="vis-card">
-            <div class="vis-card-title">机器人 #{{ botIndex + 1 }} — {{ currentBot.appid || '新机器人' }}</div>
-            <div class="vis-grid">
-              <div class="vis-field"><label>AppID</label><input :value="currentBot.appid" @input="updateBotField(botIndex, 'appid', $event)" /></div>
-              <div class="vis-field"><label>Secret</label><input :value="currentBot.secret" @input="updateBotField(botIndex, 'secret', $event)" type="password" /></div>
-              <div class="vis-field"><label>QQ API 接口</label><select :value="currentBot.api_version || 'new'" @change="updateBotField(botIndex, 'api_version', $event)"><option value="new">新接口 (api.bot.qq.com，默认)</option><option value="old">旧接口 (bots.qq.com / api.sgroup.qq.com)</option></select></div>
-              <div class="vis-field"><label>机器人QQ</label><input :value="currentBot.robot_qq" @input="updateBotField(botIndex, 'robot_qq', $event)" /></div>
-              <div class="vis-field"><label>主人 OpenID</label><input :value="(currentBot.owner_ids||[]).join(',')" @input="updateBotField(botIndex, 'owner_ids', $event)" placeholder="逗号分隔" /></div>
-            </div>
-            <div class="vis-section">WebSocket</div>
-            <div class="vis-grid">
-              <div class="vis-field"><label>启用 WS</label><label class="vis-switch"><input type="checkbox" :checked="(currentBot.websocket||{}).enabled" @change="updateBotNested(botIndex, 'websocket', 'enabled', $event.target.checked)" /><span /></label></div>
-              <div class="vis-field"><label>订阅频道消息</label><label class="vis-switch"><input type="checkbox" :checked="(currentBot.websocket||{}).subscribe_channel_events === true" @change="updateBotNested(botIndex, 'websocket', 'subscribe_channel_events', $event.target.checked)" /><span /></label></div>
-              <div class="vis-field"><label>自定义 WS 地址</label><input :value="(currentBot.websocket||{}).custom_url || ''" @input="updateBotNestedStr(botIndex, 'websocket', 'custom_url', $event)" /></div>
-              <div class="vis-field"><label>重连间隔(秒)</label><input type="number" :value="(currentBot.websocket||{}).reconnect_interval || 5" @input="updateBotNestedNum(botIndex, 'websocket', 'reconnect_interval', $event)" /></div>
-              <div class="vis-field"><label>最大重连次数</label><input type="number" :value="(currentBot.websocket||{}).max_reconnects || -1" @input="updateBotNestedNum(botIndex, 'websocket', 'max_reconnects', $event)" /></div>
-              <div class="vis-field"><label>Identify 客户端名称</label><select :value="((currentBot.websocket||{}).identify||{}).name || 'ElainaBot'" @change="updateBotDeepNested(botIndex, 'websocket', 'identify', 'name', $event.target.value)"><option value="ElainaBot">ElainaBot (默认)</option><option value="WorkBuddy">WorkBuddy</option><option value="OpenClaw">OpenClaw</option><option value="Hermes">Hermes</option><option value="QClaw">QClaw</option></select></div>
-            </div>
-            <div class="vis-section">消息处理</div>
-            <div class="vis-grid">
-              <div class="vis-field"><label>使用 Markdown</label><label class="vis-switch"><input type="checkbox" :checked="(currentBot.message||{}).use_markdown !== false" @change="updateBotNested(botIndex, 'message', 'use_markdown', $event.target.checked)" /><span /></label></div>
-              <div class="vis-field"><label>按钮自动发送转回调</label><label class="vis-switch"><input type="checkbox" :checked="(currentBot.message||{}).button_enter_to_send" @change="updateBotNested(botIndex, 'message', 'button_enter_to_send', $event.target.checked)" /><span /></label></div>
-              <div class="vis-field"><label>抑制其他机器人导致的无指令回复</label><label class="vis-switch"><input type="checkbox" :checked="(currentBot.message||{}).suppress_bot_system_reply" @change="updateBotNested(botIndex, 'message', 'suppress_bot_system_reply', $event.target.checked)" /><span /></label></div>
-              <div class="vis-field"><label>第三方发信接口</label><input :value="currentBot.api_base || ''" @input="updateBotField(botIndex, 'api_base', $event)" placeholder="留空使用官方" /></div>
-              <div class="vis-field"><label>Markdown 后缀</label><input :value="(currentBot.message||{}).markdown_suffix || ''" @input="updateBotNestedStr(botIndex, 'message', 'markdown_suffix', $event)" /></div>
-              <div class="vis-field"><label>排除无指令回复正则</label><input :value="((currentBot.message||{}).default_response_excluded_regex||[]).join(',')" @input="updateBotNestedList(botIndex, 'message', 'default_response_excluded_regex', $event)" placeholder="逗号分隔" /></div>
-            </div>
-            <div class="vis-section">功能开关</div>
-            <div class="vis-grid">
-              <div class="vis-field"><label>无指令回复</label><label class="vis-switch"><input type="checkbox" :checked="(currentBot.message||{}).send_default_response" @change="updateBotNested(botIndex, 'message', 'send_default_response', $event.target.checked)" /><span /></label></div>
-              <div class="vis-field"><label>机器人入群回复</label><label class="vis-switch"><input type="checkbox" :checked="(currentBot.welcome||{}).group_welcome" @change="updateBotNested(botIndex, 'welcome', 'group_welcome', $event.target.checked)" /><span /></label></div>
-              <div class="vis-field"><label>新用户首次交互</label><label class="vis-switch"><input type="checkbox" :checked="(currentBot.welcome||{}).new_user_welcome" @change="updateBotNested(botIndex, 'welcome', 'new_user_welcome', $event.target.checked)" /><span /></label></div>
-              <div class="vis-field"><label>添加好友消息</label><label class="vis-switch"><input type="checkbox" :checked="(currentBot.welcome||{}).friend_add_message" @change="updateBotNested(botIndex, 'welcome', 'friend_add_message', $event.target.checked)" /><span /></label></div>
-              <div class="vis-field"><label>机器人维护模式</label><label class="vis-switch"><input type="checkbox" :checked="(currentBot.maintenance||{}).enabled" @change="updateBotNested(botIndex, 'maintenance', 'enabled', $event.target.checked)" /><span /></label></div>
-              <div v-if="(currentBot.maintenance||{}).enabled" class="vis-field"><label>维护时回复提示</label><label class="vis-switch"><input type="checkbox" :checked="(currentBot.maintenance||{}).reply !== false" @change="updateBotNested(botIndex, 'maintenance', 'reply', $event.target.checked)" /><span /></label></div>
-              <div class="vis-field"><label>消息事件去重</label><label class="vis-switch"><input type="checkbox" :checked="(currentBot.dedup||{}).enabled" @change="updateBotNested(botIndex, 'dedup', 'enabled', $event.target.checked)" /><span /></label></div>
-            </div>
-            <div class="vis-grid" style="margin-top:8px">
-              <div class="vis-field"><label>用户黑名单列表</label><textarea rows="3" :value="blMapToText((currentBot.blacklist||{}).user_list)" @input="updateBotBlacklist(botIndex, 'user_list', $event)" placeholder="每行一条: OpenID 理由(可选)" /></div>
-              <div class="vis-field"><label>群黑名单列表</label><textarea rows="3" :value="blMapToText((currentBot.blacklist||{}).group_list)" @input="updateBotBlacklist(botIndex, 'group_list', $event)" placeholder="每行一条: 群 OpenID 理由(可选)" /></div>
-            </div>
-            <div class="vis-section">全量环境</div>
-            <div class="vis-grid">
-              <div class="vis-field"><label>未@机器人时正常响应指令</label><label class="vis-switch"><input type="checkbox" :checked="(currentBot.non_at_message||{}).enabled !== false" @change="updateBotNested(botIndex, 'non_at_message', 'enabled', $event.target.checked)" /><span /></label></div>
-              <div v-if="(currentBot.non_at_message||{}).enabled !== false" class="vis-field"><label>是否忽略用户仅@其他机器人的消息</label><label class="vis-switch"><input type="checkbox" :checked="(currentBot.non_at_message||{}).ignore_at_other_bot !== false" @change="updateBotNested(botIndex, 'non_at_message', 'ignore_at_other_bot', $event.target.checked)" /><span /></label></div>
-              <div v-if="(currentBot.non_at_message||{}).enabled !== false" class="vis-field"><label>是否忽略用户仅@其他用户的消息</label><label class="vis-switch"><input type="checkbox" :checked="(currentBot.non_at_message||{}).ignore_at_other_user !== false" @change="updateBotNested(botIndex, 'non_at_message', 'ignore_at_other_user', $event.target.checked)" /><span /></label></div>
-              <div class="vis-field"><label>屏蔽其他机器人发送的消息</label><label class="vis-switch"><input type="checkbox" :checked="(currentBot.non_at_message||{}).ignore_bot_sender !== false" @change="updateBotNested(botIndex, 'non_at_message', 'ignore_bot_sender', $event.target.checked)" /><span /></label></div>
-              <div class="vis-field"><label>用户@机器人时抑制无指令回复</label><label class="vis-switch"><input type="checkbox" :checked="(currentBot.non_at_message||{}).quiet_at_self" @change="updateBotNested(botIndex, 'non_at_message', 'quiet_at_self', $event.target.checked)" /><span /></label></div>
-              <div class="vis-field"><label>匹配前剥离开头@机器人名称</label><label class="vis-switch"><input type="checkbox" :checked="(currentBot.non_at_message||{}).strip_bot_name_at" @change="updateBotNested(botIndex, 'non_at_message', 'strip_bot_name_at', $event.target.checked)" /><span /></label></div>
-            </div>
-            <div v-if="(currentBot.non_at_message||{}).enabled === false" class="vis-grid" style="margin-top:8px">
-              <div class="vis-field"><label>群白名单</label><input :value="((currentBot.non_at_message||{}).group_whitelist||[]).join(',')" @input="updateBotNestedList(botIndex, 'non_at_message', 'group_whitelist', $event)" placeholder="群 OpenID, 逗号分隔 (仅白名单群触发插件)" /></div>
-            </div>
-            <div class="vis-section">用户 ID 模式 <span style="font-weight:normal;color:var(--danger);font-size:12px">不懂请不要开启，开启后 openid 和 union_openid 反转</span></div>
-            <div class="vis-grid">
-              <div class="vis-field"><label>群聊使用 union_openid</label><label class="vis-switch"><input type="checkbox" :checked="(currentBot.identity||{}).use_union_id_for_group" @change="updateBotNested(botIndex, 'identity', 'use_union_id_for_group', $event.target.checked)" /><span /></label></div>
-              <div class="vis-field"><label>频道使用 union_openid</label><label class="vis-switch"><input type="checkbox" :checked="(currentBot.identity||{}).use_union_id_for_channel" @change="updateBotNested(botIndex, 'identity', 'use_union_id_for_channel', $event.target.checked)" /><span /></label></div>
-            </div>
-          </div>
-        </template>
-
-        <!-- Settings -->
-        <div v-if="activeFile === 'settings'" class="vis-card">
-          <div class="vis-card-title">HTTP 服务器</div>
-          <div class="vis-grid">
-            <div class="vis-field"><label>监听地址</label><input :value="settings.server?.host || '0.0.0.0'" @input="updateSetting('server', 'host', $event)" /></div>
-            <div class="vis-field"><label>端口</label><input type="number" :value="settings.server?.port || 5001" @input="updateSettingNum('server', 'port', $event)" /></div>
-          </div>
-          <div class="vis-card-title" style="margin-top:14px">Web 面板</div>
-          <div class="vis-grid">
-            <div class="vis-field"><label>管理密码</label><input :value="settings.web?.admin_password || ''" @input="updateSetting('web', 'admin_password', $event)" type="password" /></div>
-            <div class="vis-field"><label>框架名称</label><input :value="settings.web?.framework_name || 'Elaina'" @input="updateSetting('web', 'framework_name', $event)" /></div>
-            <div class="vis-field"><label>图标 URL</label><input :value="settings.web?.favicon_url || ''" @input="updateSetting('web', 'favicon_url', $event)" /></div>
-            <div class="vis-field"><label>PC 标题后缀</label><input :value="settings.web?.pc_title_suffix || ''" @input="updateSetting('web', 'pc_title_suffix', $event)" /></div>
-            <div class="vis-field"><label>登录标题后缀</label><input :value="settings.web?.login_title_suffix || ''" @input="updateSetting('web', 'login_title_suffix', $event)" /></div>
-          </div>
-          <div class="vis-card-title" style="margin-top:14px">日志</div>
-          <div class="vis-grid">
-            <div class="vis-field"><label>日志等级</label><select :value="settings.logging?.level || 'INFO'" @change="updateSetting('logging', 'level', $event)"><option>DEBUG</option><option>INFO</option><option>WARNING</option><option>ERROR</option></select></div>
-            <div class="vis-field"><label>日志目录</label><input :value="settings.logging?.dir || 'log'" @input="updateSetting('logging', 'dir', $event)" /></div>
-            <div class="vis-field"><label>写入间隔(秒)</label><input type="number" :value="settings.logging?.insert_interval ?? 2" @input="updateSettingNum('logging', 'insert_interval', $event)" /></div>
-            <div class="vis-field"><label>批量写入条数</label><input type="number" :value="settings.logging?.batch_size ?? 0" @input="updateSettingNum('logging', 'batch_size', $event)" /></div>
-            <div class="vis-field"><label>保留天数</label><input type="number" :value="settings.logging?.retention_days ?? 5" @input="updateSettingNum('logging', 'retention_days', $event)" /></div>
-            <div class="vis-field full"><label>WAL 模式</label><label class="vis-switch"><input type="checkbox" :checked="settings.logging?.wal_mode !== false" @change="updateSettingBool('logging', 'wal_mode', $event)" /><span /></label></div>
-            <div class="vis-field full"><label>记录消息原始响应</label><label class="vis-switch"><input type="checkbox" :checked="settings.logging?.record_raw_message !== false" @change="updateSettingBool('logging', 'record_raw_message', $event)" /><span /></label></div>
-            <div class="tpl-desc" style="grid-column: 1 / -1">关闭后不再记录 context 和 raw_message，可大幅减少日志体积；关闭后无法通过数据库读取历史报错的原始内容。</div>
-          </div>
-          <div class="vis-card-title" style="margin-top:14px">依赖管理</div>
-          <div class="vis-grid">
-            <div class="vis-field full"><label>自动安装依赖</label><label class="vis-switch"><input type="checkbox" :checked="settings.pip?.auto_install !== false" @change="updateSettingBool('pip', 'auto_install', $event)" /><span /></label></div>
-            <div class="vis-field"><label>pip 镜像源</label><input :value="settings.pip?.mirror || ''" @input="updateSetting('pip', 'mirror', $event)" placeholder="留空用默认" /></div>
-          </div>
-          <div class="vis-card-title" style="margin-top:14px">定时重启</div>
-          <div class="vis-grid">
-            <div class="vis-field full"><label>启用</label><label class="vis-switch"><input type="checkbox" :checked="settings.restart?.enabled" @change="updateSettingBool('restart', 'enabled', $event)" /><span /></label></div>
-            <div class="vis-field"><label>模式</label><select :value="settings.restart?.mode || 'daily'" @change="updateSetting('restart', 'mode', $event)"><option value="daily">每天固定时间</option><option value="interval">每隔 N 小时</option></select></div>
-            <div v-if="(settings.restart?.mode || 'daily') === 'daily'" class="vis-field"><label>重启时间</label><input :value="settings.restart?.daily_time || '04:00'" @input="updateSetting('restart', 'daily_time', $event)" placeholder="HH:MM" /></div>
-            <div v-if="settings.restart?.mode === 'interval'" class="vis-field"><label>间隔小时</label><input type="number" :value="settings.restart?.interval_hours || 24" @input="updateSettingNum('restart', 'interval_hours', $event)" min="1" /></div>
-          </div>
-          <div class="vis-card-title" style="margin-top:14px">自动更新</div>
-          <div class="vis-grid">
-            <div class="vis-field full"><label>启用自动更新</label><label class="vis-switch"><input type="checkbox" :checked="settings.auto_update?.enabled === true" @change="updateSettingBool('auto_update', 'enabled', $event)" /><span /></label></div>
-            <div class="vis-field"><label>检查间隔(秒)</label><input type="number" :value="settings.auto_update?.interval_seconds ?? 600" @input="updateSettingNum('auto_update', 'interval_seconds', $event)" min="60" /></div>
-          </div>
-          <div class="vis-card-title" style="margin-top:14px">统计</div>
-          <div class="vis-grid">
-            <div class="vis-field full"><label>用户使用数据统计开关</label><label class="vis-switch"><input type="checkbox" :checked="settings.statistics?.enabled !== false" @change="updateSettingBool('statistics', 'enabled', $event)" /><span /></label></div>
-            <div class="vis-field"><label>每日统计-时</label><input type="number" :value="settings.statistics?.schedule_hour ?? 4" @input="updateSettingNum('statistics', 'schedule_hour', $event)" min="0" max="23" /></div>
-            <div class="vis-field"><label>每日统计-分</label><input type="number" :value="settings.statistics?.schedule_minute ?? 0" @input="updateSettingNum('statistics', 'schedule_minute', $event)" min="0" max="59" /></div>
-          </div>
+          <button class="cfg-btn cfg-icon-btn" title="重新加载配置" aria-label="重新加载配置" :disabled="loading || !!savingFile" @click="fetchConfig()"><SvgIcon name="refresh" :size="16" :class="{ 'cfg-spinning': loading }" /></button>
+          <button class="cfg-btn cfg-save" :disabled="!dirty || !!savingFile || loading || !loaded" @click="saveConfig"><SvgIcon name="save" :size="15" />{{ savingFile === activeFile ? '保存中…' : '保存配置' }}</button>
         </div>
+      </header>
 
-        <!-- Templates -->
-        <div v-if="activeFile === 'templates'" class="vis-card">
-          <div class="vis-card-title">消息模板</div>
-          <div class="help-vars" style="margin-bottom:12px">
-            <span v-for="v in VARIABLES" :key="v" class="help-var">{{ v }}</span>
-          </div>
-          <div v-for="key in templateKeys" :key="key" class="tpl-edit-item">
-            <div class="tpl-edit-header">
-              <label class="tpl-edit-label">{{ key }}</label>
-              <span v-if="TEMPLATE_LABELS[key]" class="tpl-desc">{{ TEMPLATE_LABELS[key] }}</span>
+      <div v-if="loadError" class="cfg-notice cfg-notice--error" role="alert"><SvgIcon name="alert-circle" :size="16" /><span>{{ loadError }}</span><button @click="fetchConfig()">重新加载</button></div>
+      <div v-if="loading && !loaded" class="cfg-state" role="status"><SvgIcon name="refresh" :size="25" class="cfg-spinning" /><strong>正在加载配置</strong><span>读取机器人、全局设置与消息模板</span></div>
+      <div v-else-if="!loaded" class="cfg-state"><SvgIcon name="alert-circle" :size="28" /><strong>配置暂时无法加载</strong><button class="cfg-btn" @click="fetchConfig()">重试</button></div>
+      <div v-else class="cfg-workspace" :class="{ 'cfg-workspace--templates': activeFile === 'templates' && viewMode === 'visual' }">
+        <aside v-if="activeFile !== 'templates' && viewMode === 'visual'" class="cfg-nav" aria-label="配置分区">
+          <div class="cfg-nav-title">本页设置 <span>{{ sections.length }}</span></div>
+          <button v-for="section in sections" :key="section.id" :class="{ active: focusedSection === section.id }" @click="scrollToSection(section.id)"><SvgIcon :name="section.icon" :size="15" /><span>{{ section.title }}</span></button>
+          <div class="cfg-nav-note"><SvgIcon name="information-circle" :size="15" /><span>所有分区展开<br />可在本页集中调整</span></div>
+        </aside>
+        <section v-show="activeFile !== 'templates' || viewMode === 'yaml'" class="cfg-main" :aria-label="activeTab.label">
+          <div v-if="viewMode === 'visual' && activeFile === 'bot'" class="cfg-bot-picker">
+            <span class="cfg-bot-symbol"><SvgIcon name="link" :size="18" /></span>
+            <select v-if="bots.length" v-model="botIndex" aria-label="选择机器人"><option v-for="(bot, index) in bots" :key="index" :value="index">{{ bot.name || `机器人 #${index + 1}` }} · {{ bot.appid || '待填写 AppID' }}</option></select>
+            <span v-else class="cfg-no-bots">暂未添加机器人</span>
+            <span class="cfg-bot-count">{{ bots.length }} 个机器人</span>
+            <div class="cfg-bot-actions">
+              <button class="cfg-btn" @click="addBot"><SvgIcon name="plus" :size="14" />添加</button>
+              <button class="cfg-btn cfg-btn-accent" @click="startQrBind"><SvgIcon name="link" :size="14" />扫码接入</button>
+              <button v-if="bots.length" class="cfg-btn cfg-icon-btn cfg-btn-danger" title="删除当前机器人" aria-label="删除当前机器人" @click="removeBot"><SvgIcon name="trash" :size="15" /></button>
             </div>
-            <div class="tpl-fields">
-              <div class="tpl-field">
-                <span class="tpl-field-label">Markdown</span>
-                <textarea class="tpl-edit-input" :value="getTemplateField(key, 'markdown')" @input="updateTemplateField(key, 'markdown', $event)" rows="2" />
-              </div>
-              <div class="tpl-field">
-                <span class="tpl-field-label">按钮 (YAML)</span>
-                <textarea class="tpl-edit-input" :value="buttonTexts[key] ?? ''" @input="updateButtonText(key, $event)" rows="2"
-                  placeholder='[{text: "菜单", data: "/菜单", enter: true, style: 1}],[{text: "帮助", data: "/帮助"}]' />
+          </div>
+          <div ref="contentRef" class="cfg-scroll" :class="{ 'cfg-scroll--yaml': viewMode === 'yaml' }">
+            <template v-if="viewMode === 'yaml'">
+              <div class="cfg-yaml-heading"><span><SvgIcon name="code" :size="16" />源文件编辑</span><small>Ctrl / ⌘ + S 保存</small></div>
+              <textarea v-model="raw[activeFile]" class="cfg-yaml-editor" :aria-label="`${activeFile}.yaml 源文件`" spellcheck="false" />
+              <pre v-if="yamlError" class="cfg-yaml-error" role="alert">{{ yamlError }}</pre>
+            </template>
+            <div v-else-if="activeFile === 'bot' && !currentBot" class="cfg-state"><SvgIcon name="link" :size="32" /><strong>接入你的第一个机器人</strong><span>添加配置，或使用手机 QQ 扫码接入</span><button class="cfg-btn cfg-save" @click="addBot"><SvgIcon name="plus" :size="15" />添加机器人</button></div>
+            <div v-else class="cfg-columns">
+              <div v-for="column in [0, 1]" :key="`${activeFile}-${column}-${botIndex}`" class="cfg-column">
+                <section v-for="section in sections.filter(item => item.column === column)" :id="`cfg-${section.id}`" :key="section.id" :ref="el => el ? sectionRefs.set(section.id, el) : sectionRefs.delete(section.id)" class="cfg-card" :class="{ 'cfg-card--caution': section.caution, 'cfg-card--focused': focusedSection === section.id }" :aria-label="section.title">
+                  <header class="cfg-card-heading"><span class="cfg-card-icon"><SvgIcon :name="section.icon" :size="17" /></span><div><h3>{{ section.title }}</h3><p>{{ section.description }}</p></div><span class="cfg-card-count">{{ visibleFields(section).length + (section.switches?.length || 0) }} 项</span></header>
+                  <div class="cfg-fields"><ConfigField v-for="field in visibleFields(section)" :key="field.path" :field="field" :prefix="`${activeFile}-${botIndex}`" :model-value="getFieldValue(currentData, field)" @update:model-value="updateField(field, $event)" /></div>
+                  <div v-if="section.switches" class="cfg-switch-pair"><ConfigField v-for="field in section.switches" :key="field.path" :field="field" :prefix="activeFile" :model-value="getFieldValue(currentData, field)" @update:model-value="updateField(field, $event)" /></div>
+                  <p v-if="section.note" class="cfg-card-note"><SvgIcon name="information-circle" :size="13" />{{ section.note }}</p>
+                </section>
               </div>
             </div>
           </div>
-        </div>
+        </section>
+        <TemplateEditor :key="revision" v-show="activeFile === 'templates' && viewMode === 'visual'" :active="activeFile === 'templates' && viewMode === 'visual'" :source="raw.templates" :bots="bots" @update:source="raw.templates = $event" @invalid="templateInvalid = $event" />
       </div>
-    </template>
-
-    <!-- YAML mode -->
-    <div v-else class="config-body">
-      <div class="editor-wrap">
-        <div class="editor-hint">
-          <span>编辑 {{ activeFile }}.yaml</span>
-          <span v-if="dirty" class="editor-hint-r">• 未保存</span>
-        </div>
-        <textarea class="yaml-editor" v-model="raw[activeFile]" @input="dirty = true" spellcheck="false" />
-      </div>
+      <footer class="cfg-footer">
+        <span class="cfg-save-status" :class="{ pending: dirty }"><i /><span>{{ dirty ? '当前文件有未保存的修改' : '当前文件已保存' }}</span></span>
+        <span v-if="changedFiles.length" class="cfg-other-pending">{{ changedFiles.length }} 个文件待保存</span>
+        <span class="cfg-footer-tip">保存当前文件 <kbd>Ctrl S</kbd></span>
+      </footer>
     </div>
 
-    <!-- 扫码快捷绑定机器人 -->
-    <div v-if="qrBind.show" class="modal-overlay" @click.self="closeQrBind">
-      <div class="qr-modal">
-        <div class="qr-title">扫码接入机器人</div>
-        <div class="qr-desc">请使用机器人管理员手机 QQ 扫描下方二维码，完成机器人绑定</div>
-        <div class="qr-desc" style="color:var(--danger)">提示：扫码接入会重置机器人密钥 (Secret)，如有其他框架接入同一机器人，请谨慎使用</div>
-        <div class="qr-frame">
-          <img v-if="qrBind.img" :src="qrBind.img" class="qr-img" alt="绑定二维码" />
-          <div v-else class="qr-loading">{{ qrBind.status === 'error' ? '获取失败' : '正在生成二维码...' }}</div>
-        </div>
-        <div :class="['qr-status', qrBind.status === 'completed' ? 'status-ok' : qrBind.status === 'error' || qrBind.status === 'expired' ? 'status-err' : 'status-waiting']">
-          {{ qrBind.status === 'completed' ? `绑定成功 (AppID: ${qrBind.appid})，配置已自动写入` : qrBind.status === 'expired' ? '二维码已过期，请重新获取' : qrBind.status === 'error' ? (qrBind.message || '绑定失败') : qrBind.status === 'loading' ? '正在创建绑定任务...' : '等待扫码绑定...' }}
-        </div>
-        <button v-if="qrBind.status === 'expired' || qrBind.status === 'error'" class="cfg-btn" style="width:100%;margin-bottom:8px" @click="startQrBind">重新获取二维码</button>
-        <button class="cfg-btn qr-close" @click="closeQrBind">关闭</button>
+    <div v-if="qrBind.show" class="cfg-modal-overlay" @click.self="closeQrBind" @keydown.esc="closeQrBind">
+      <div class="cfg-qr-modal" role="dialog" aria-modal="true" aria-labelledby="cfg-qr-title">
+        <h3 id="cfg-qr-title">扫码接入机器人</h3>
+        <p>使用机器人管理员手机 QQ 扫描二维码完成绑定</p>
+        <p class="cfg-qr-warning">扫码接入会重置机器人密钥（Secret），请留意其他框架的接入状态。</p>
+        <div class="cfg-qr-frame"><img v-if="qrBind.img" :src="qrBind.img" alt="绑定二维码" /><span v-else>{{ qrBind.status === 'error' ? '获取失败' : '正在生成二维码…' }}</span></div>
+        <p class="cfg-qr-status" role="status">{{ qrBind.status === 'completed' ? `绑定成功 · ${qrBind.appid}` : qrBind.status === 'expired' ? '二维码已过期，请重新获取' : qrBind.status === 'error' ? (qrBind.message || '绑定失败') : qrBind.status === 'loading' ? '正在创建绑定任务…' : '等待扫码绑定…' }}</p>
+        <button v-if="qrBind.status === 'expired' || qrBind.status === 'error'" class="cfg-btn cfg-save" @click="startQrBind">重新获取二维码</button>
+        <button class="cfg-btn" @click="closeQrBind">关闭</button>
       </div>
     </div>
   </div>
 </template>
 
-<style scoped>
-.config-page {
-  display:flex;
-  flex-direction:column;
-  height:calc(100vh - 100px)
-}
-.config-header {
-  display:flex;
-  align-items:center;
-  justify-content:flex-end;
-  margin-bottom:12px
-}
-.config-actions {
-  display:flex;
-  gap:6px
-}
-.cfg-btn {
-  padding:5px 14px;
-  border:1px solid var(--border);
-  border-radius:6px;
-  background:transparent;
-  color:var(--text2);
-  cursor:pointer;
-  font-size:13px
-}
-.cfg-btn:hover {
-  color:var(--text);
-  border-color:var(--text3)
-}
-.cfg-btn:disabled {
-  opacity:.4;
-  cursor:default
-}
-.cfg-btn.active {
-  background:var(--bg3);
-  color:var(--text);
-  border-color:var(--text3)
-}
-.cfg-btn.save {
-  background:var(--accent);
-  color:#fff;
-  border-color:var(--accent)
-}
-.cfg-btn.save:hover {
-  background:var(--accent-hover)
-}
-.config-tabs {
-  display:flex;
-  align-items:center;
-  gap:6px;
-  margin-bottom:12px
-}
-.config-tabs-spacer {
-  flex:1
-}
-.config-tab {
-  padding:6px 16px;
-  border:1px solid var(--border);
-  border-radius:6px;
-  background:transparent;
-  color:var(--text2);
-  cursor:pointer;
-  font-size:13px
-}
-.config-tab:hover {
-  color:var(--text);
-  background:var(--bg3)
-}
-.config-tab.active {
-  background:var(--accent-soft);
-  color:var(--accent);
-  border-color:var(--accent);
-  font-weight:600
-}
-.config-body {
-  flex:1;
-  display:flex;
-  gap:12px;
-  min-height:0
-}
-.editor-wrap {
-  flex:1;
-  display:flex;
-  flex-direction:column;
-  min-width:0
-}
-.editor-hint {
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  padding:8px 12px;
-  background:var(--bg3);
-  border:1px solid var(--border);
-  border-bottom:none;
-  border-radius:8px 8px 0 0;
-  color:var(--text2);
-  font-size:12px
-}
-.editor-hint-r {
-  color:var(--warning)
-}
-.yaml-editor {
-  flex:1;
-  resize:none;
-  padding:12px;
-  background:var(--bg2);
-  color:var(--text);
-  border:1px solid var(--border);
-  border-radius:0 0 8px 8px;
-  font-family:Cascadia Code,Fira Code,monospace;
-  font-size:13px;
-  line-height:1.6;
-  -moz-tab-size:2;
-  -o-tab-size:2;
-  tab-size:2;
-  outline:none
-}
-.yaml-editor:focus {
-  border-color:var(--accent)
-}
-.visual-body {
-  flex:1;
-  overflow-y:auto;
-  display:flex;
-  flex-direction:column;
-  gap:12px
-}
-.vis-card {
-  background:var(--bg2);
-  border:1px solid var(--border);
-  border-radius:var(--radius);
-  box-shadow:var(--shadow-sm);
-  padding:20px
-}
-.vis-card-title {
-  color:var(--text);
-  font-size:14px;
-  font-weight:700;
-  margin-bottom:12px
-}
-.vis-section {
-  color:var(--accent);
-  font-size:12px;
-  font-weight:600;
-  margin:14px 0 8px;
-  padding-top:10px;
-  border-top:1px solid var(--border)
-}
-.vis-grid {
-  display:grid;
-  grid-template-columns:1fr 1fr;
-  gap:8px 16px
-}
-.vis-grid-3 {
-  display:grid;
-  grid-template-columns:1fr 1fr 1fr;
-  gap:8px 16px
-}
-.vis-field {
-  display:flex;
-  align-items:center;
-  gap:8px
-}
-.vis-field.full {
-  grid-column:1 / -1
-}
-.vis-field label:first-child {
-  font-size:12px;
-  color:var(--text2);
-  min-width:140px;
-  flex-shrink:0;
-  text-align:right
-}
-.vis-field input[type=text],.vis-field input[type=password],.vis-field input[type=number],.vis-field input:not([type]),.vis-field select,.vis-field textarea {
-  flex:1;
-  min-width:0;
-  background:var(--bg3);
-  color:var(--text);
-  border:1px solid var(--border);
-  border-radius:6px;
-  padding:5px 8px;
-  font-size:12px;
-  outline:none
-}
-.vis-field textarea {
-  resize:vertical;
-  font-family:inherit
-}
-.vis-field input:focus,.vis-field select:focus,.vis-field textarea:focus {
-  border-color:var(--accent)
-}
-.vis-switch {
-  position:relative;
-  display:inline-block;
-  width:36px;
-  height:20px;
-  cursor:pointer
-}
-.vis-switch input {
-  display:none
-}
-.vis-switch span {
-  position:absolute;
-  top:0;
-  right:0;
-  bottom:0;
-  left:0;
-  background:var(--border);
-  border-radius:10px;
-  transition:.2s
-}
-.vis-switch span:after {
-  content:"";
-  position:absolute;
-  left:2px;
-  top:2px;
-  width:16px;
-  height:16px;
-  background:#fff;
-  border-radius:50%;
-  transition:.2s
-}
-.vis-switch input:checked+span {
-  background:var(--accent)
-}
-.vis-switch input:checked+span:after {
-  left:18px
-}
-.tpl-edit-item {
-  margin-bottom:14px;
-  padding-bottom:14px;
-  border-bottom:1px solid var(--border)
-}
-.tpl-edit-item:last-child {
-  border-bottom:none;
-  margin-bottom:0;
-  padding-bottom:0
-}
-.tpl-edit-header {
-  display:flex;
-  align-items:center;
-  gap:8px;
-  margin-bottom:6px
-}
-.tpl-edit-label {
-  font-size:12px;
-  color:var(--accent);
-  font-weight:600
-}
-.tpl-desc {
-  font-size:11px;
-  color:var(--text3)
-}
-.tpl-fields {
-  display:grid;
-  grid-template-columns:1fr 1fr;
-  gap:12px
-}
-.tpl-field {
-  display:flex;
-  flex-direction:column;
-  gap:2px;
-  min-width:0
-}
-.tpl-field-label {
-  font-size:11px;
-  color:var(--text3)
-}
-.tpl-edit-input {
-  width:100%;
-  box-sizing:border-box;
-  resize:vertical;
-  background:var(--bg3);
-  color:var(--text);
-  border:1px solid var(--border);
-  border-radius:6px;
-  padding:6px 8px;
-  font-size:12px;
-  font-family:Cascadia Code,Fira Code,monospace;
-  line-height:1.5;
-  outline:none
-}
-.tpl-edit-input:focus {
-  border-color:var(--accent)
-}
-.help-vars {
-  display:flex;
-  flex-wrap:wrap;
-  gap:4px
-}
-.help-var {
-  background:var(--bg3);
-  color:var(--accent);
-  padding:2px 8px;
-  border-radius:4px;
-  font-size:11px;
-  font-family:monospace
-}
-.bot-picker {
-  display:flex;
-  align-items:center;
-  gap:10px;
-  margin-bottom:4px
-}
-.bot-picker label {
-  font-size:13px;
-  color:var(--text2);
-  font-weight:600;
-  flex-shrink:0
-}
-.bot-picker select {
-  flex:1;
-  max-width:320px;
-  background:var(--bg3);
-  color:var(--text);
-  border:1px solid var(--border);
-  border-radius:6px;
-  padding:5px 8px;
-  font-size:13px;
-  outline:none
-}
-.bot-picker select:focus {
-  border-color:var(--accent)
-}
-.modal-overlay {
-  position:fixed;
-  top:0;
-  right:0;
-  bottom:0;
-  left:0;
-  background:#00000080;
-  z-index:1000;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  -webkit-backdrop-filter:blur(4px);
-  backdrop-filter:blur(4px)
-}
-.qr-modal {
-  background:var(--bg-float);
-  border-radius:var(--radius-lg);
-  padding:32px;
-  text-align:center;
-  min-width:340px;
-  box-shadow:0 20px 60px #0000004d
-}
-.qr-title {
-  font-size:18px;
-  font-weight:700;
-  color:var(--text);
-  margin-bottom:6px
-}
-.qr-desc {
-  font-size:13px;
-  color:var(--text3);
-  margin-bottom:20px
-}
-.qr-frame {
-  width:260px;
-  height:260px;
-  margin:0 auto 16px;
-  border-radius:var(--radius);
-  overflow:hidden;
-  border:1px solid var(--border);
-  background:#fff
-}
-.qr-img {
-  width:100%;
-  height:100%;
-  -o-object-fit:contain;
-  object-fit:contain
-}
-.qr-loading {
-  width:100%;
-  height:100%;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  color:var(--text3);
-  font-size:14px
-}
-.qr-status {
-  font-size:13px;
-  margin-bottom:16px;
-  font-weight:600
-}
-.status-ok {
-  color:var(--success)
-}
-.status-err {
-  color:var(--danger)
-}
-.status-waiting {
-  color:var(--text2)
-}
-.qr-close {
-  width:100%
-}
-@media(max-width:767px) {
-  .config-tabs {
-  flex-wrap:wrap;
-  gap:6px
-}
-.config-tab {
-  flex:1;
-  padding:7px 0;
-  font-size:12px;
-  text-align:center
-}
-.config-tabs-spacer {
-  flex-basis:100%;
-  height:0
-}
-.config-tabs .cfg-btn {
-  flex:1;
-  padding:7px 0;
-  font-size:12px;
-  text-align:center
-}
-.config-body {
-  flex-direction:column
-}
-.vis-card {
-  padding:14px
-}
-.vis-grid,.vis-grid-3 {
-  grid-template-columns:1fr;
-  gap:10px
-}
-.vis-field {
-  flex-direction:column;
-  align-items:stretch;
-  gap:4px
-}
-.vis-field label:first-child {
-  min-width:0;
-  text-align:left
-}
-.vis-field:has(.vis-switch) {
-  flex-direction:row;
-  align-items:center;
-  justify-content:space-between
-}
-.vis-field input,.vis-field select,.vis-field textarea {
-  padding:8px 10px;
-  font-size:13px
-}
-.bot-picker {
-  flex-wrap:wrap;
-  gap:8px
-}
-.bot-picker label {
-  flex-basis:100%
-}
-.bot-picker select {
-  flex-basis:100%;
-  max-width:none;
-  padding:8px 10px
-}
-.bot-picker .cfg-btn {
-  flex:1;
-  justify-content:center
-}
-.qr-modal {
-  min-width:0;
-  width:min(340px, calc(100vw - 32px));
-  padding:24px 16px
-}
-.qr-frame {
-  width:min(260px, 70vw);
-  height:min(260px, 70vw)
-}
-}
-</style>
+<style src="./config/config.css"></style>

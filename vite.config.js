@@ -24,7 +24,7 @@ export default defineConfig({
           if (id.includes('naive-ui')) return 'naive-ui'
           if (id.includes('chart.js') || id.includes('vue-chartjs') || id.includes('chartjs-plugin')) return 'charts'
           if (id.includes('js-yaml')) return 'js-yaml'
-          if (id.includes('qrcode')) return 'qrcode'
+          // Keep qrcode and its CommonJS dependencies together to avoid initialization cycles.
           return 'vendor'
         },
       },
