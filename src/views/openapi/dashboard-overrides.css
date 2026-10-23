@@ -1,5 +1,5 @@
 /* Embed the dashboard content inside the framework navigation. */
-.qqdash.qqdash { min-height: 100%; height: auto; font-size: 14px; line-height: normal; color-scheme: light; }
+.qqdash.qqdash { min-height: 100%; height: auto; font-size: 14px; line-height: normal; color-scheme: inherit; }
 .qqdash.qqdash .app-shell { display: block; min-height: 100%; }
 .qqdash.qqdash .main { min-height: 100%; padding: 0; }
 .qqdash.qqdash .page-manage { padding-top: 36px; }

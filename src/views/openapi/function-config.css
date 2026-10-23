@@ -147,6 +147,14 @@
 .add-row { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 72px; gap: 8px; margin-top: 10px; border: 1px dashed #bfc6d1; border-radius: 10px; color: var(--fc-muted); background: transparent; transition: border-color .15s, color .15s, background .15s; }
 .add-row:hover:not(:disabled) { border-color: var(--fc-accent); color: var(--fc-accent); background: var(--fc-accent-soft); }
 .add-row:disabled { cursor: not-allowed; opacity: .45; }
+.function-config[data-theme="dark"] .config-notice.success { color: var(--success); }
+.function-config[data-theme="dark"] .phone-menu-strip button.active { border-color: var(--fc-accent); color: var(--fc-accent); background: var(--fc-accent-soft); }
+.function-config[data-theme="dark"] .phone-menu-strip button span { color: var(--fc-text); }
+.function-config[data-theme="dark"] .phone-handle::after { background: var(--text3); }
+.function-config[data-theme="dark"] .phone-command-items { scrollbar-color: var(--text3) transparent; }
+.function-config[data-theme="dark"] .phone-command-items::-webkit-scrollbar-thumb { background: var(--text3); }
+.function-config[data-theme="dark"] .add-row { border-color: var(--fc-border); }
+.function-config[data-theme="dark"] .add-row:hover:not(:disabled) { border-color: var(--fc-accent); }
 @media (max-width: 1180px) {
   .config-workspace { grid-template-columns: 350px minmax(500px, 1fr); gap: 14px; }
   .phone-wrap { padding-inline: 35px; }

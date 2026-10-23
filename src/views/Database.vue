@@ -18,6 +18,7 @@ const rows = ref([])
 const cols = ref([])
 const dataColKeys = ref([])
 const total = ref(0)
+const sqlTruncated = ref(false)
 const page = ref(1)
 const sql = ref('')
 const mode = ref('table')
@@ -158,11 +159,15 @@ async function fetchData() {
 
 async function execSql() {
   if (!sql.value.trim() || !dbPath.value) return
-  querying.value = true; mode.value = 'sql'
+  querying.value = true; mode.value = 'sql'; sqlTruncated.value = false
   try {
     const res = await axios.post('/api/database/sql', { path: dbPath.value, sql: sql.value.trim() })
     const data = responsePayload(res)
-    if (responseOk(res)) { rows.value = data.rows || []; total.value = data.total || 0; buildCols(data.columns || [], false) }
+    if (responseOk(res)) {
+      rows.value = data.rows || []; total.value = data.total || 0; buildCols(data.columns || [], false)
+      sqlTruncated.value = data.truncated === true
+      if (sqlTruncated.value) msg.warning('查询结果超过 1000 行，仅显示和导出前 1000 行，请缩小查询范围或使用 LIMIT / OFFSET 分批查询')
+    }
     else msg.error(responseMessage(res, '查询失败'))
   } catch (e) { msg.error(e.normalizedMessage || responseMessage(e.response, '查询失败')) }
   finally { querying.value = false }
@@ -371,6 +376,7 @@ watch([rows, tables, () => tableInfo.value, () => total.value], () => nextTick(r
               </div>
             </template>
             <n-spin :show="querying">
+              <div v-if="mode === 'sql' && sqlTruncated" role="status" class="mb-3 text-sm" style="color:var(--text2)">结果已截断：仅显示和导出前 1000 行，实际结果更多。请缩小查询范围或使用 LIMIT / OFFSET 分批查询。</div>
               <div ref="tableWrapRef" class="overflow-x-auto">
                 <n-data-table class="db-data-table" :columns="cols" :data="rows" :bordered="false" :single-line="false" size="small" :max-height="tableMaxHeight" :scroll-x="scrollX" :row-key="r => r._rowid" :checked-row-keys="checkedRows" @update:checked-row-keys="k => checkedRows = k" striped />
               </div>

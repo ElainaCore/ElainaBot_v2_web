@@ -1740,7 +1740,7 @@ onUnmounted(() => {
                             :src="messageAvatar(message)"
                             :name="message.nickname"
                             :bot="message.is_self"
-                            :size="34"
+                            :size="30"
                           />
                           <div class="message-main">
                             <div class="message-meta">

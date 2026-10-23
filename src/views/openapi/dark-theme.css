@@ -1,0 +1,68 @@
+/* Follow the panel preference while retaining the official dashboard's light palette. */
+.qqdash[data-theme="dark"] {
+  --bg: inherit;
+  --bg-elev: var(--bg2);
+  --bg-sunken: var(--bg3);
+  --ink: var(--text);
+  --ink-1: var(--text);
+  --ink-2: var(--text);
+  --ink-3: var(--text2);
+  --ink-4: #98a2b3;
+  --ink-5: var(--text3);
+  --line: var(--border);
+  --line-strong: #465163;
+  --shadow: inherit;
+  --shadow-sm: inherit;
+  --shadow-lg: var(--shadow-hover);
+  --accent: #38b6ff;
+  --accent-hover: #58c3ff;
+  --accent-soft: rgba(0, 153, 255, .16);
+  --text_primary: var(--ink);
+  --text_secondary: var(--ink-3);
+  --text_tertiary: var(--ink-4);
+  --text-secondary: var(--ink-3);
+  --text-tertiary: var(--ink-4);
+  --text-link: var(--accent);
+  --fill_light_primary: var(--bg-elev);
+  --bg_bottom_standard: var(--bg-sunken);
+  --black-4: var(--line);
+  --border-color: var(--line);
+  --op-surface: var(--bg-elev);
+  --op-sunken: var(--bg-sunken);
+  --op-hover: var(--bg-float);
+  --op-text: var(--ink-2);
+  --op-muted: var(--ink-3);
+  --op-subtle: var(--ink-4);
+  --op-border: var(--line);
+  --op-border-strong: var(--line-strong);
+  --op-input-background: var(--bg-sunken);
+  --op-tint-background: linear-gradient(180deg, var(--accent-soft), var(--bg-elev));
+  --op-skeleton-background: linear-gradient(90deg, var(--bg-sunken) 25%, var(--bg-float) 37%, var(--bg-sunken) 63%);
+  --op-success: #4ade80;
+  --op-warning: #ffb547;
+  --op-purple: #b79aff;
+  --op-inset-shadow: var(--shadow-sm);
+}
+
+/* Keep the light ink used on filled action buttons legible against the blue. */
+.qqdash[data-theme="dark"] .btn.primary:not(.danger),
+.qqdash[data-theme="dark"] .login-dialog-action.primary {
+  background: #0077c7;
+}
+.qqdash[data-theme="dark"] .btn.primary:not(.danger):hover,
+.qqdash[data-theme="dark"] .login-dialog-action.primary:hover {
+  background: #006bb3;
+}
+.qqdash[data-theme="dark"] .btn.primary.outline:not(.danger) {
+  background: transparent;
+}
+.qqdash[data-theme="dark"] .btn.primary.outline:not(.danger):hover {
+  background: var(--accent-soft);
+}
+.qqdash[data-theme="dark"] .batch-bar .btn.primary:not(.danger) {
+  background: var(--danger);
+}
+.qqdash[data-theme="dark"] .avatar-stack-item,
+.qqdash[data-theme="dark"] .create-simple-avatar-edit {
+  border-color: var(--bg-elev);
+}

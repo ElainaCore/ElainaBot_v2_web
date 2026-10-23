@@ -82,7 +82,7 @@ onUnmounted(() => {
   min-width: 0;
   max-width: 100%;
   font-size: 14px;
-  line-height: 1.8;
+  line-height: 1.65;
   color: inherit;
   overflow-wrap: anywhere;
   word-break: normal;
@@ -94,7 +94,7 @@ onUnmounted(() => {
   margin-bottom: 0;
 }
 .message-markdown :deep(p) {
-  margin: 0.65em 0;
+  margin: 0.4em 0;
   white-space: break-spaces;
 }
 .message-markdown :deep(h1),
@@ -103,7 +103,7 @@ onUnmounted(() => {
 .message-markdown :deep(h4),
 .message-markdown :deep(h5),
 .message-markdown :deep(h6) {
-  margin: 1em 0 0.45em;
+  margin: 0.75em 0 0.35em;
   font-weight: 650;
   line-height: 1.45;
   letter-spacing: -0.02em;
@@ -143,7 +143,7 @@ onUnmounted(() => {
   color: var(--text);
 }
 .message-markdown :deep(.md-code-block) {
-  margin: 0.8em 0;
+  margin: 0.6em 0;
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -179,7 +179,7 @@ onUnmounted(() => {
 .message-markdown :deep(pre) {
   margin: 0;
   max-width: 100%;
-  padding: 14px 16px;
+  padding: 10px 12px;
   overflow-x: auto;
   overscroll-behavior-x: contain;
   white-space: pre;
@@ -211,7 +211,7 @@ onUnmounted(() => {
 }
 .message-markdown :deep(ul),
 .message-markdown :deep(ol) {
-  margin: 0.6em 0;
+  margin: 0.45em 0;
   padding-left: 1.65em;
 }
 .message-markdown :deep(li) {
@@ -297,21 +297,25 @@ onUnmounted(() => {
 }
 .message-markdown :deep(.md-image) {
   display: block;
-  max-width: min(100%, 360px);
-  max-height: 320px;
+  width: auto;
+  max-width: min(100%, 240px);
+  max-height: 160px;
   height: auto;
   object-fit: contain;
-  margin: 8px 0;
-  border-radius: 10px;
+  margin: 4px 0;
+  border-radius: 8px;
   cursor: zoom-in;
+}
+.message-markdown :deep(.md-image:only-child) {
+  margin: 0;
 }
 .message-markdown :deep(.md-image-placeholder) {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   max-width: 100%;
-  padding: 12px 18px;
-  margin: 6px 0;
+  padding: 8px 12px;
+  margin: 4px 0;
   border: 1px dashed color-mix(in srgb, var(--accent) 40%, var(--border));
   border-radius: 10px;
   background: var(--accent-soft);
@@ -339,15 +343,13 @@ onUnmounted(() => {
 .message-markdown :deep(.md-keyboard) {
   display: flex;
   flex-direction: column;
-  gap: 7px;
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px solid var(--border);
+  gap: 5px;
+  margin-top: 8px;
 }
 .message-markdown :deep(.md-keyboard-row) {
   display: flex;
   flex-wrap: wrap;
-  gap: 7px;
+  gap: 5px;
 }
 .message-markdown :deep(.md-keyboard-button) {
   display: inline-flex;
@@ -355,7 +357,7 @@ onUnmounted(() => {
   justify-content: center;
   gap: 7px;
   flex: 1 1 auto;
-  padding: 6px 14px;
+  padding: 4px 10px;
   border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--border));
   border-radius: 7px;
   background: var(--bg2);
@@ -456,6 +458,10 @@ onUnmounted(() => {
 @media (max-width: 767px) {
   .message-markdown {
     font-size: 13px;
+  }
+  .message-markdown :deep(.md-image) {
+    max-width: min(100%, 200px);
+    max-height: 140px;
   }
   .message-markdown :deep(pre) {
     padding: 12px;

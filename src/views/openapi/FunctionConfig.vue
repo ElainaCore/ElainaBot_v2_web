@@ -2,8 +2,10 @@
 import { computed, onMounted, ref } from 'vue'
 import Draggable from 'vuedraggable'
 import axios from '../../utils/axios'
+import { useThemeStore } from '../../stores/theme'
 import SvgIcon from '../../components/SvgIcon.vue'
 
+const themeStore = useThemeStore()
 const MENU_LIMIT = 20
 
 const SCOPES = [
@@ -725,7 +727,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="function-config">
+  <div class="function-config" :data-theme="themeStore.darkMode ? 'dark' : 'light'">
     <div v-if="notice.text" class="config-notice" :class="notice.type" role="status">{{ notice.text }}</div>
 
     <nav class="feature-tabs" aria-label="功能配置">

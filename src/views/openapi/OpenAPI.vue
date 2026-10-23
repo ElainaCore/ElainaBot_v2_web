@@ -1,6 +1,7 @@
 <script setup>
 import { ref, reactive, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import axios from '../../utils/axios'
+import { useThemeStore } from '../../stores/theme'
 import AppIcon from './AppIcon.vue'
 import OpenAPILoginDialog from './OpenAPILoginDialog.vue'
 import QrCodeImage from './QrCodeImage.vue'
@@ -8,6 +9,7 @@ import ReportLineChart from './ReportLineChart.vue'
 import './qqdash.css'
 import './official-dashboard.css'
 import './dashboard-overrides.css'
+import './dark-theme.css'
 import MenuCommandSettings from './MenuCommandSettings.vue'
 import ServiceGuide from './ServiceGuide.vue'
 import FeatureImages from './FeatureImages.vue'
@@ -15,6 +17,7 @@ import GroupAdminSettings from './GroupAdminSettings.vue'
 import NotifyCenter from './NotifyCenter.vue'
 
 
+const themeStore = useThemeStore()
 const UID = 'web_user'
 const HELPER_QR_URL = 'https://qq-ai.cdn-go.cn/web/neon/-/21fea1a6/q.qq.com_qqbot_dashboard/assets/qq-platform-assistant-qr.png'
 const showHelperQR = ref(false)
@@ -1757,7 +1760,7 @@ defineExpose({ reload: loadStatus })
 </script>
 
 <template>
-  <div class="qqdash">
+  <div class="qqdash" :data-theme="themeStore.darkMode ? 'dark' : 'light'">
     <div class="app-shell">
       <!-- 主区 -->
       <main class="main">

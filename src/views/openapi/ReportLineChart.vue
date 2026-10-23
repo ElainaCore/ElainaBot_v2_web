@@ -163,24 +163,24 @@ function updateHover(event) {
 
 <style scoped>
 .report-line-chart { padding: 2px 0 4px; }
-.report-chart-legend { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px 18px; min-height: 24px; color: #6e6e73; font-size: 11.5px; }
+.report-chart-legend { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px 18px; min-height: 24px; color: var(--ink-3, #6e6e73); font-size: 11.5px; }
 .report-chart-legend span { display: inline-flex; align-items: center; gap: 6px; }
 .report-chart-legend i, .report-chart-tooltip i { width: 7px; height: 7px; flex: none; border-radius: 50%; }
 .report-chart-stage { position: relative; min-height: 300px; }
 .report-chart-stage svg { display: block; width: 100%; height: auto; min-height: 270px; overflow: visible; touch-action: pan-y; }
-.report-chart-grid line { stroke: rgba(60, 60, 67, .09); stroke-width: 1; vector-effect: non-scaling-stroke; }
-.report-chart-grid text { fill: #8e8e93; font-size: 10.5px; text-anchor: end; }
-.report-chart-dates text { fill: #8e8e93; font-size: 10.5px; text-anchor: middle; }
+.report-chart-grid line { stroke: var(--op-border, rgba(60, 60, 67, .09)); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.report-chart-grid text { fill: var(--ink-4, #8e8e93); font-size: 10.5px; text-anchor: end; }
+.report-chart-dates text { fill: var(--ink-4, #8e8e93); font-size: 10.5px; text-anchor: middle; }
 .report-chart-line { fill: none; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; stroke-dasharray: 1; stroke-dashoffset: 1; animation: report-line-draw .75s cubic-bezier(.22, .8, .32, 1) forwards; animation-delay: calc(var(--series-index) * 70ms); }
-.report-chart-point { opacity: .36; stroke: #fff; stroke-width: 1.5; vector-effect: non-scaling-stroke; transition: r .16s ease, opacity .16s ease; }
+.report-chart-point { opacity: .36; stroke: var(--bg-elev, #fff); stroke-width: 1.5; vector-effect: non-scaling-stroke; transition: r .16s ease, opacity .16s ease; }
 .report-chart-point.active { opacity: 1; }
-.report-chart-cursor line { stroke: rgba(60, 60, 67, .2); stroke-width: 1; stroke-dasharray: 4 4; vector-effect: non-scaling-stroke; }
-.report-chart-tooltip { position: absolute; top: 12px; z-index: 2; min-width: 190px; padding: 11px 12px; border: 1px solid rgba(60, 60, 67, .1); border-radius: 11px; background: rgba(255, 255, 255, .94); box-shadow: 0 10px 28px rgba(31, 35, 41, .13); backdrop-filter: blur(14px); pointer-events: none; animation: report-tooltip-in .14s ease-out; }
-.report-chart-tooltip b { display: block; margin-bottom: 8px; color: #1d1d1f; font-size: 12px; }
-.report-chart-tooltip b span { color: #8e8e93; font-weight: 500; }
+.report-chart-cursor line { stroke: var(--op-border-strong, rgba(60, 60, 67, .2)); stroke-width: 1; stroke-dasharray: 4 4; vector-effect: non-scaling-stroke; }
+.report-chart-tooltip { position: absolute; top: 12px; z-index: 2; min-width: 190px; padding: 11px 12px; border: 1px solid var(--op-border, rgba(60, 60, 67, .1)); border-radius: 11px; background: var(--op-surface, rgba(255, 255, 255, .94)); box-shadow: 0 10px 28px rgba(31, 35, 41, .13); backdrop-filter: blur(14px); pointer-events: none; animation: report-tooltip-in .14s ease-out; }
+.report-chart-tooltip b { display: block; margin-bottom: 8px; color: var(--ink, #1d1d1f); font-size: 12px; }
+.report-chart-tooltip b span { color: var(--ink-4, #8e8e93); font-weight: 500; }
 .report-chart-tooltip>span { display: grid; grid-template-columns: 7px minmax(90px, 1fr) auto; align-items: center; gap: 7px; margin-top: 5px; }
-.report-chart-tooltip em { color: #6e6e73; font-size: 11px; font-style: normal; }
-.report-chart-tooltip strong { color: #1d1d1f; font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.report-chart-tooltip em { color: var(--ink-3, #6e6e73); font-size: 11px; font-style: normal; }
+.report-chart-tooltip strong { color: var(--ink, #1d1d1f); font-size: 11.5px; font-variant-numeric: tabular-nums; }
 @keyframes report-line-draw { to { stroke-dashoffset: 0; } }
 @keyframes report-tooltip-in { from { opacity: 0; } }
 </style>
