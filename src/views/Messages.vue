@@ -99,6 +99,11 @@ const remarkEditing = ref(null)
 const remarkModalVisible = ref(false)
 const remarkError = ref('')
 const remarkSaving = ref(false)
+const startChatModalVisible = ref(false)
+const startChatType = ref('group')
+const startChatOpenid = ref('')
+const startChatError = ref('')
+const startingChat = ref(false)
 const addRemarkModalVisible = ref(false)
 const addRemarkOpenid = ref('')
 const addRemarkName = ref('')
@@ -115,6 +120,86 @@ const searchRef = ref(null)
 const messageSearch = ref('')
 const messageDirection = ref('all')
 const detailsVisible = ref(false)
+const userGroupsVisible = ref(false)
+const userGroupsTarget = ref(null)
+const userGroups = ref([])
+const userGroupsLoading = ref(false)
+const userGroupsError = ref('')
+let userGroupsRequest = 0
+
+async function openUserGroups(user) {
+  if (!user?.user_id) return
+  const request = ++userGroupsRequest
+  userGroupsTarget.value = { ...user, appid: currentAppid(user) }
+  userGroupsVisible.value = true
+  userGroupsLoading.value = true
+  userGroupsError.value = ''
+  userGroups.value = []
+  try {
+    const res = await axios.post('/api/message/user-groups', {
+      user_id: user.user_id, appid: userGroupsTarget.value.appid
+    })
+    if (_unmounted || request !== userGroupsRequest) return
+    userGroups.value = res.data?.data?.groups || []
+  } catch (error) {
+    if (!_unmounted && request === userGroupsRequest)
+      userGroupsError.value = error.normalizedMessage || '群聊加载失败，请重试'
+  } finally {
+    if (request === userGroupsRequest) userGroupsLoading.value = false
+  }
+}
+
+async function openUserGroup(group) {
+  userGroupsVisible.value = false
+  if (group.appid && group.appid !== app.currentBotId) app.switchBot(group.appid)
+  chatType.value = 'group'
+  await nextTick()
+  await selectChat(group)
+}
+
+const groupMembersVisible = ref(false)
+const groupMembersTarget = ref(null)
+const groupMembers = ref([])
+const groupMembersLoading = ref(false)
+const groupMembersError = ref('')
+let groupMembersRequest = 0
+
+function maskedOpenid(openid) {
+  const value = String(openid || '')
+  return `${value.slice(0, 3)}**${value.slice(-3)}`
+}
+
+async function openGroupMembers(group = current.value) {
+  if (!group?.chat_id) return
+  const request = ++groupMembersRequest
+  groupMembersTarget.value = { ...group, appid: group.appid || app.currentBotId || '' }
+  groupMembersVisible.value = true
+  groupMembersLoading.value = true
+  groupMembersError.value = ''
+  groupMembers.value = []
+  try {
+    const res = await axios.post('/api/message/group-members', {
+      group_id: group.chat_id, appid: groupMembersTarget.value.appid
+    })
+    if (_unmounted || request !== groupMembersRequest) return
+    groupMembers.value = res.data?.data?.members || []
+  } catch (error) {
+    if (!_unmounted && request === groupMembersRequest)
+      groupMembersError.value = error.normalizedMessage || '群用户加载失败，请重试'
+  } finally {
+    if (request === groupMembersRequest) groupMembersLoading.value = false
+  }
+}
+
+async function openMemberChat(member) {
+  groupMembersVisible.value = false
+  if (member.appid && member.appid !== app.currentBotId) app.switchBot(member.appid)
+  chatType.value = 'user'
+  await nextTick()
+  sendMode.value = 'active'
+  await selectChat({ chat_id: member.user_id, appid: member.appid })
+}
+
 const sendOptionsOpen = ref(false)
 const showPreview = ref(false)
 const editorRef = ref(null)
@@ -835,6 +920,37 @@ function onVisibleChange() {
   }
 }
 
+function openStartChat() {
+  startChatType.value = apiChatType.value
+  startChatOpenid.value = ''
+  startChatError.value = ''
+  startChatModalVisible.value = true
+}
+
+async function submitStartChat() {
+  if (startingChat.value) return false
+  const openid = startChatOpenid.value.trim()
+  if (!openid || /\s/.test(openid)) {
+    startChatError.value = '请输入有效的 OpenID，不能包含空白字符'
+    return false
+  }
+  startingChat.value = true
+  try {
+    chatType.value = startChatType.value
+    // Let the tab watcher reset the old conversation before selecting the target.
+    await nextTick()
+    const existing = chats.value.find((chat) => chat.chat_id === openid)
+    startChatModalVisible.value = false
+    sendMode.value = 'active'
+    await selectChat(existing || { chat_id: openid, appid: app.currentBotId || '' })
+    await nextTick()
+    editorRef.value?.focus()
+  } finally {
+    startingChat.value = false
+  }
+  return false
+}
+
 let _selectId = 0
 async function selectChat(chat) {
   resetConversation()
@@ -1399,9 +1515,14 @@ onUnmounted(() => {
             <h2>会话</h2>
             <span class="total-badge">{{ total }}</span>
           </div>
-          <button class="icon-button" title="添加群备注" aria-label="添加群备注" @click="openAddRemark">
-            <SvgIcon name="plus" :size="20" />
-          </button>
+          <div>
+            <button class="icon-button" title="发起对话" aria-label="发起对话" @click="openStartChat">
+              <SvgIcon name="chatbubbles" :size="20" />
+            </button>
+            <button class="icon-button" title="添加群备注" aria-label="添加群备注" @click="openAddRemark">
+              <SvgIcon name="plus" :size="20" />
+            </button>
+          </div>
         </div>
         <nav class="chat-type-tabs" aria-label="会话类型">
           <button
@@ -1735,13 +1856,20 @@ onUnmounted(() => {
                             'rich-message': /```|\|.*\|/.test(message.content || '')
                           }"
                         >
-                          <MessageAvatar
-                            class="timeline-avatar"
-                            :src="messageAvatar(message)"
-                            :name="message.nickname"
-                            :bot="message.is_self"
-                            :size="30"
-                          />
+                          <button
+                            class="icon-button timeline-avatar"
+                            :disabled="message.is_self || !message.user_id"
+                            title="查看该用户所在群聊"
+                            aria-label="查看该用户所在群聊"
+                            @click="openUserGroups(message)"
+                          >
+                            <MessageAvatar
+                              :src="messageAvatar(message)"
+                              :name="message.nickname"
+                              :bot="message.is_self"
+                              :size="30"
+                            />
+                          </button>
                           <div class="message-main">
                             <div class="message-meta">
                               <span class="message-author" :title="message.user_id">
@@ -2229,6 +2357,13 @@ onUnmounted(() => {
                 <strong>{{ chatDisplayName(current) }}</strong>
                 <span>{{ apiChatType === 'group' ? '群聊会话' : '私聊会话' }}</span>
               </div>
+              <button v-if="apiChatType === 'group'" class="secondary-button" @click="openGroupMembers()">
+                查看该群用户
+              </button>
+              <button v-if="apiChatType === 'user'" class="secondary-button"
+                @click="openUserGroups({ user_id: current.chat_id, nickname: chatDisplayName(current), appid: current.appid })">
+                查看该用户所在群聊
+              </button>
               <dl>
                 <div>
                   <dt>
@@ -2398,6 +2533,77 @@ onUnmounted(() => {
           />
         </label>
       </div>
+    </n-modal>
+    <n-modal v-model:show="groupMembersVisible" preset="card" title="该群用户"
+      style="width: min(640px, calc(100vw - 32px))">
+      <div class="remark-form">
+        <strong>{{ groupMembersTarget?.group_name || groupMembersTarget?.chat_id }}</strong>
+        <p>显示全部已记录成员，点击头像进入私聊。</p>
+        <p v-if="groupMembersLoading" role="status">正在加载群用户…</p>
+        <div v-else-if="groupMembersError" role="alert">
+          <p class="remark-error">{{ groupMembersError }}</p>
+          <button class="secondary-button" @click="openGroupMembers(groupMembersTarget)">重试</button>
+        </div>
+        <template v-else>
+          <p v-if="!groupMembers.length">暂无该群的用户记录</p>
+          <span v-else>共 {{ groupMembers.length }} 位用户</span>
+          <div class="group-members-grid">
+            <button v-for="member in groupMembers" :key="`${member.appid}:${member.user_id}`"
+              class="group-member-card" :aria-label="`与 ${maskedOpenid(member.user_id)} 私聊`"
+              @click="openMemberChat(member)">
+              <MessageAvatar :src="messageAvatar(member)" :name="member.user_id" :size="48" />
+              <span>{{ maskedOpenid(member.user_id) }}</span>
+            </button>
+          </div>
+        </template>
+      </div>
+    </n-modal>
+    <n-modal v-model:show="userGroupsVisible" preset="card" title="用户所在群聊"
+      style="width: min(520px, calc(100vw - 32px))">
+      <div class="remark-form">
+        <strong>{{ userGroupsTarget?.nickname || userGroupsTarget?.user_id }}</strong>
+        <span>{{ userGroupsTarget?.user_id }}</span>
+        <p>仅显示当前机器人已记录的群成员关系，可能不完整或存在更新延迟。</p>
+        <p v-if="userGroupsLoading" role="status">正在加载群聊…</p>
+        <div v-else-if="userGroupsError" role="alert">
+          <p class="remark-error">{{ userGroupsError }}</p>
+          <button class="secondary-button" @click="openUserGroups(userGroupsTarget)">重试</button>
+        </div>
+        <template v-else>
+          <p v-if="!userGroups.length">暂无该用户的群成员记录</p>
+          <span v-else>已记录 {{ userGroups.length }} 个群聊</span>
+          <div style="max-height: 50vh; overflow-y: auto; display: grid; gap: 8px">
+            <button v-for="group in userGroups" :key="`${group.appid}:${group.chat_id}`"
+              class="secondary-button" style="height: auto; white-space: normal; overflow-wrap: anywhere"
+              @click="openUserGroup(group)">
+              {{ group.group_name || '未命名群聊' }} · {{ group.chat_id }}
+              {{ group.in_group === 0 ? '（机器人已退群）' : '' }}
+            </button>
+          </div>
+        </template>
+      </div>
+    </n-modal>
+    <n-modal
+      v-model:show="startChatModalVisible"
+      preset="dialog"
+      title="发起对话"
+      positive-text="发起对话"
+      negative-text="取消"
+      :positive-button-props="{ loading: startingChat, disabled: startingChat }"
+      @positive-click="submitStartChat"
+      style="width: min(400px, calc(100vw - 32px))"
+    >
+      <form class="remark-form" @submit.prevent="submitStartChat">
+        <p v-if="startChatError" class="remark-error" role="alert">{{ startChatError }}</p>
+        <label>
+          对话类型
+          <n-select v-model:value="startChatType" :options="[{ label: '群', value: 'group' }, { label: '好友', value: 'user' }]" />
+        </label>
+        <label>
+          {{ startChatType === 'group' ? '群 OpenID' : '好友 OpenID' }}
+          <n-input v-model:value="startChatOpenid" placeholder="输入 OpenID，无需已有消息记录" autofocus @keydown.enter.prevent="submitStartChat" />
+        </label>
+      </form>
     </n-modal>
     <n-modal
       v-model:show="addRemarkModalVisible"
