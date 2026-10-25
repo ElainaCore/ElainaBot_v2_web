@@ -74,24 +74,64 @@ for (const width of [1440, 375]) {
     await page.getByRole('button', { name: '功能配置', exact: true }).click()
     await expect(page.locator('.function-config')).toHaveAttribute('data-theme', 'dark')
     await page.locator('.phone-menu-strip button').first().press('Enter')
-    await expect(page.locator('.phone-menu-strip button.active')).toHaveCSS('color', 'rgb(0, 153, 255)')
+    await expect(page.locator('.phone-menu-strip button.active')).toHaveCSS('color', 'rgb(59, 123, 247)')
     await expect(page.locator('.phone-menu-strip button span').first()).toHaveCSS('color', 'rgb(230, 233, 239)')
     await page.getByTitle('切换日间模式').click()
     await expect(page.locator('.function-config')).toHaveAttribute('data-theme', 'light')
     await page.getByRole('button', { name: '开放平台', exact: true }).click()
     await expect(dashboard).toHaveAttribute('data-theme', 'light')
-    await expect(dashboard).toHaveCSS('background-color', 'rgb(245, 245, 247)')
-    await expect(page.locator('.report-chart-grid text').first()).toHaveCSS('fill', 'rgb(142, 142, 147)')
+    await expect(dashboard).toHaveCSS('background-color', 'rgb(244, 246, 251)')
+    await expect(page.locator('.report-chart-grid text').first()).toHaveCSS('fill', 'rgb(151, 161, 176)')
   })
 }
 
 test('已有夜间偏好下的授权页面和扫码弹窗', async ({ page }) => {
   await mockPanel(page, { ready: false })
-  await page.addInitScript(() => localStorage.setItem('elaina_dark', '1'))
+  await page.addInitScript(() => {
+    localStorage.setItem('elaina_dark', '1')
+    localStorage.setItem('elaina_theme', 'midnight')
+  })
   await page.goto('/web/openapi')
   await expect(page.locator('.v2-gate')).toHaveCSS('background-color', 'rgb(28, 31, 38)')
+  await expect(page.getByRole('button', { name: '使用 QQ 扫码登录' })).toHaveCSS('background-color', 'rgb(124, 92, 246)')
   await page.getByRole('button', { name: '使用 QQ 扫码登录' }).click()
+  await expect(page.locator('.login-dialog-progress span.active')).toHaveCSS('color', 'rgb(124, 92, 246)')
   await expect(page.locator('.login-dialog')).toHaveCSS('background-color', 'rgb(28, 31, 38)')
   await expect(page.locator('.login-dialog-qr-image')).toHaveCSS('background-color', 'rgb(255, 255, 255)')
   await page.screenshot({ path: '.cache/openapi-dark-login.png', fullPage: true })
 })
+
+for (const width of [1440, 375]) {
+  test(`开放平台主色实时切换并覆盖功能配置 (${width}px)`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 1000 })
+    await mockPanel(page)
+    await page.goto('/web/openapi')
+    const create = page.getByRole('button', { name: '创建机器人', exact: true })
+    const switchActive = page.locator('.openapi-switch button.active')
+    for (const [name, color, hover] of [
+      ['梦幻紫', 'rgb(124, 92, 246)', 'rgb(106, 73, 238)'],
+      ['森林绿', 'rgb(22, 163, 74)', 'rgb(19, 139, 63)'],
+    ]) {
+      await page.getByTitle('主题', { exact: true }).click()
+      await page.locator('.theme-opt').filter({ hasText: name }).click()
+      await page.getByTitle('主题', { exact: true }).click()
+      await expect(create).toHaveCSS('background-color', color)
+      await expect(switchActive).toHaveCSS('background-color', color)
+      await create.hover()
+      await expect(create).toHaveCSS('background-color', hover)
+      await page.mouse.move(0, 0)
+    }
+    await page.getByTitle('切换夜间模式').click()
+    await expect(create).toHaveCSS('background-color', 'rgb(22, 163, 74)')
+    await page.reload()
+    await expect(create).toHaveCSS('background-color', 'rgb(22, 163, 74)')
+    await page.getByRole('button', { name: '功能配置', exact: true }).click()
+    await expect(page.locator('.feature-tab.active')).toHaveCSS('color', 'rgb(22, 163, 74)')
+    await page.locator('.phone-menu-strip button').first().press('Enter')
+    await expect(page.locator('.phone-menu-strip button.active')).toHaveCSS('color', 'rgb(22, 163, 74)')
+    await expect(switchActive).toHaveCSS('background-color', 'rgb(22, 163, 74)')
+    await page.getByTitle('切换日间模式').click()
+    await page.getByRole('button', { name: '开放平台', exact: true }).click()
+    await expect(create).toHaveCSS('background-color', 'rgb(22, 163, 74)')
+  })
+}

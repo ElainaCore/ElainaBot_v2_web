@@ -2551,7 +2551,7 @@ defineExpose({ reload: loadStatus })
 <style scoped>
 .v2-gate { max-width: 820px; margin: 36px auto 0; padding: 38px; border: 1px solid var(--line); border-radius: 26px; background: var(--bg-elev); box-shadow: var(--shadow); }
 .v2-gate-hero { display: flex; align-items: center; gap: 18px; }
-.v2-gate-icon { width: 62px; height: 62px; flex: none; display: grid; place-items: center; border-radius: 18px; background: linear-gradient(145deg, #049fff, #6ec9ff); color: #fff; box-shadow: 0 10px 24px rgba(0, 153, 255, .24); }
+.v2-gate-icon { width: 62px; height: 62px; flex: none; display: grid; place-items: center; border-radius: 18px; background: linear-gradient(145deg, var(--accent), var(--accent-light)); color: #fff; box-shadow: 0 10px 24px color-mix(in srgb, var(--accent) 24%, transparent); }
 .v2-gate .page-title { margin: 0; font-size: 27px; }
 .v2-gate .page-sub { margin: 7px 0 0; color: var(--ink-3); font-size: 13.5px; line-height: 1.65; }
 .v2-login-overview { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 22px; }
@@ -2654,7 +2654,7 @@ defineExpose({ reload: loadStatus })
 .event-channel-card b { color: var(--ink); font-size: 13.5px; }
 .event-channel-card small { color: var(--ink-4); font-size: 11.5px; line-height: 1.55; }
 .event-channel-card i { position: absolute; top: 10px; right: 11px; display: none; color: var(--accent); font-style: normal; }
-.event-channel-card.active { border-color: var(--accent); background: var(--accent-soft); box-shadow: 0 4px 16px rgba(0, 153, 255, .1); }
+.event-channel-card.active { border-color: var(--accent); background: var(--accent-soft); box-shadow: 0 4px 16px color-mix(in srgb, var(--accent) 10%, transparent); }
 .event-channel-card.active i { display: block; }
 .event-note { display: flex; align-items: flex-start; gap: 7px; margin-top: 14px; padding: 12px; border-radius: 10px; background: var(--accent-soft); color: var(--ink-2); font-size: 11.5px; line-height: 1.55; }
 .event-webhook-field { display: grid; gap: 8px; margin-top: 16px; color: var(--ink-2); font-size: 12.5px; font-weight: 650; }
@@ -2681,17 +2681,17 @@ defineExpose({ reload: loadStatus })
 
 .qqdash .page-actions { display: flex; align-items: center; gap: 10px; }
 .qqdash .current-subject-card { display: inline-flex; align-items: center; gap: 9px; min-width: 230px; max-width: 360px; margin-top: 13px; padding: 8px 10px 8px 8px; border: 1px solid var(--accent-border); border-radius: 12px; background: var(--accent-soft); }
-.qqdash .current-subject-mark, .developer-picker-mark { width: 30px; height: 30px; display: grid; flex: none; place-items: center; border-radius: 50%; background: var(--bg-elev); color: var(--accent); font-size: 13px; font-weight: 750; box-shadow: 0 2px 8px rgba(0, 153, 255, .12); }
+.qqdash .current-subject-mark, .developer-picker-mark { width: 30px; height: 30px; display: grid; flex: none; place-items: center; border-radius: 50%; background: var(--bg-elev); color: var(--accent); font-size: 13px; font-weight: 750; box-shadow: 0 2px 8px color-mix(in srgb, var(--accent) 12%, transparent); }
 .qqdash .current-subject-text { min-width: 0; display: grid; flex: 1; gap: 2px; text-align: left; }
 .qqdash .current-subject-text strong, .developer-picker-info strong { overflow: hidden; color: var(--ink); font-size: 12px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
 .qqdash .current-subject-text small, .developer-picker-info small { overflow: hidden; color: var(--ink-4); font-size: 10.5px; text-overflow: ellipsis; white-space: nowrap; }
-.qqdash .current-subject-tag, .developer-picker-type { flex: none; padding: 3px 7px; border-radius: 999px; background: rgba(0, 153, 255, .14); color: var(--accent); font-size: 10px; font-weight: 700; }
+.qqdash .current-subject-tag, .developer-picker-type { flex: none; padding: 3px 7px; border-radius: 999px; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); font-size: 10px; font-weight: 700; }
 .qqdash .current-subject-card[data-auth-type="enterprise"] .current-subject-tag { background: rgba(41, 183, 128, .12); color: #149665; }
 .developer-picker-modal { width: min(460px, calc(100vw - 32px)); }
 .developer-picker-list { display: grid; gap: 8px; max-height: min(430px, 55vh); margin-top: 20px; overflow-y: auto; }
 .developer-picker-item { width: 100%; display: flex; align-items: center; gap: 11px; padding: 11px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg-elev); font: inherit; text-align: left; cursor: pointer; transition: border-color .18s, background .18s, box-shadow .18s; }
 .developer-picker-item:hover { border-color: var(--accent-border); background: var(--accent-soft); }
-.developer-picker-item.selected { border-color: var(--accent); background: var(--accent-soft); box-shadow: 0 0 0 3px rgba(0, 153, 255, .08); }
+.developer-picker-item.selected { border-color: var(--accent); background: var(--accent-soft); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 8%, transparent); }
 .developer-picker-info { min-width: 0; display: grid; flex: 1; gap: 3px; }
 .developer-picker-mark { border: 1px solid var(--line); background: var(--bg-sunken); box-shadow: none; }
 .cropper-overlay { z-index: 1001; }

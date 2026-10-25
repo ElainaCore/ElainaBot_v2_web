@@ -13,7 +13,7 @@
 .qqdash .q-loading_float .q-loading__inner{padding:20px 12px;min-width:100px;min-height:100px;background-color:rgba(0,0,0,.65);border-radius:6px;box-sizing:border-box;display:flex;flex-direction:column;justify-content:space-between}
 .qqdash .q-loading_float .q-loading__icon{display:block;font-size:24px}
 .qqdash .q-loading_float .q-loading__txt-tips{display:block;text-align:center;color:var(--text_white, #FFFFFF);font-size:14px}
-.qqdash .q-loading_circle{color:var(--brand_standard, #0099FF)}
+.qqdash .q-loading_circle{color:var(--brand_standard, var(--accent))}
 .qqdash .q-loading_circle-inner{transform-origin:50% 50%;transform:rotate(-90deg);transition:stroke-dasharray .2s ease-in}
 .qqdash .q-loading_circle-text{text-anchor:middle;dominant-baseline:middle;font-size:16px;line-height:24px;font-weight:300;stroke:var(--text_secondary, #8C8C8C);fill:var(--text_secondary, #8C8C8C)}
 .qqdash .q-loading_float-circle_text{color:var(--text_secondary, #8C8C8C);text-align:center;font-size:17px;font-style:normal;font-weight:400;line-height:24px;margin-top:12px}
@@ -108,11 +108,11 @@
 .qqdash .ai-field{display:flex;flex-direction:column;gap:8px}
 .qqdash .ai-label{font-size:13px;font-weight:600;color:var(--ink)}
 .qqdash .ai-input{width:100%;border:1px solid var(--op-border, rgba(60,60,67,.12));background:var(--op-input-background, linear-gradient(180deg,#fafafa,#f7f7f8));border-radius:12px;padding:11px 14px;font-size:14px;line-height:1.5;color:var(--ink);outline:none;transition:border-color .15s,box-shadow .15s,background .15s}
-.qqdash .ai-input:focus{background:var(--op-surface, #fff);border-color:rgba(0,153,255,.36);box-shadow:0 0 0 4px rgba(0,153,255,.1)}
+.qqdash .ai-input:focus{background:var(--op-surface, #fff);border-color:color-mix(in srgb, var(--accent) 36%, transparent);box-shadow:0 0 0 4px color-mix(in srgb, var(--accent) 10%, transparent)}
 .qqdash .ai-input::placeholder{color:var(--ink-4)}
 .qqdash .ai-role-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .qqdash .ai-role-card{display:flex;align-items:flex-start;gap:10px;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--bg-sunken);cursor:pointer;transition:border-color .15s,background .15s,box-shadow .15s}
-.qqdash .ai-role-card:hover{border-color:rgba(0,153,255,.36)}
+.qqdash .ai-role-card:hover{border-color:color-mix(in srgb, var(--accent) 36%, transparent)}
 .qqdash .ai-role-card.is-checked{border-color:var(--accent);background:rgba(0,122,255,.06);box-shadow:0 0 0 1px var(--accent) inset}
 .qqdash .ai-role-checkbox{flex:none;width:16px;height:16px;margin-top:2px;accent-color:var(--accent);cursor:pointer}
 .qqdash .ai-role-main{display:flex;flex-direction:column;gap:2px;min-width:0}
@@ -129,7 +129,7 @@
 .qqdash .ar-label{font-size:13px;font-weight:600;color:var(--ink)}
 .qqdash .ar-role-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .qqdash .ar-role-card{display:flex;align-items:flex-start;gap:10px;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--bg-sunken);cursor:pointer;transition:border-color .15s,background .15s,box-shadow .15s}
-.qqdash .ar-role-card:hover{border-color:rgba(0,153,255,.36)}
+.qqdash .ar-role-card:hover{border-color:color-mix(in srgb, var(--accent) 36%, transparent)}
 .qqdash .ar-role-card.is-checked{border-color:var(--accent);background:rgba(0,122,255,.06);box-shadow:0 0 0 1px var(--accent) inset}
 .qqdash .ar-role-checkbox{flex:none;width:16px;height:16px;margin-top:2px;accent-color:var(--accent);cursor:pointer}
 .qqdash .ar-role-main{display:flex;flex-direction:column;gap:2px;min-width:0}
@@ -175,7 +175,7 @@
 .qqdash .nd-body{flex:1;min-height:0;margin-top:18px;overflow-y:auto;overscroll-behavior:contain;font-size:14px;line-height:1.75;color:var(--ink-2)}
 .qqdash .nd-foot{flex-shrink:0;display:flex;justify-content:flex-end;margin-top:26px}
 .qqdash .nd-ok{min-width:96px;height:40px;padding:0 20px;border:none;border-radius:12px;background:var(--accent);color:#fff;font-size:14px;font-weight:600;cursor:pointer;transition:background .15s,box-shadow .15s}
-.qqdash .nd-ok:hover{box-shadow:0 8px 18px rgba(0,153,255,.24)}
+.qqdash .nd-ok:hover{box-shadow:0 8px 18px color-mix(in srgb, var(--accent) 24%, transparent)}
 .qqdash .am-modal{width:min(540px,94vw);max-height:86vh;padding:0;border-radius:22px;overflow:hidden;display:flex;flex-direction:column;background:var(--op-surface, #fff)}
 .qqdash .am-modal .am-head{padding:22px 26px 14px;border-bottom:1px solid var(--line)}
 .qqdash .am-modal .am-head h3{margin:0 0 6px;font-size:18px;font-weight:700;letter-spacing:-.01em}
@@ -198,7 +198,7 @@
 .qqdash .am-modal .am-self-tag{flex:none;align-self:center;padding:1px 8px;border-radius:6px;font-size:12px;line-height:1.5;color:var(--accent);background:rgba(0,122,255,.1);border:1px solid var(--accent-border, rgba(0, 122, 255, .2))}
 .qqdash .am-modal .am-foot{display:flex;gap:8px;justify-content:flex-end;padding:14px 26px 22px;border-top:1px solid var(--line);background:var(--bg-sunken)}
 /* Dashboard component styles, scoped to the framework OpenAPI view. */
-.qqdash{--bg: #f5f5f7;--bg-elev: #ffffff;--bg-sunken: #fafafa;--ink: #1d1d1f;--ink-2: #3c3c43;--ink-3: #6e6e73;--ink-4: #8e8e93;--line: rgba(60, 60, 67, .12);--line-strong: rgba(60, 60, 67, .22);--accent: #0099FF;--accent-hover: #0099FF;--accent-soft: rgba(0, 153, 255, .08);--accent-softer: rgba(0, 153, 255, .16);--accent-border: rgba(0, 153, 255, .18);--accent-border-strong: rgba(0, 153, 255, .28);--accent-cloud: rgba(0, 153, 255, .14);--danger: #ff3b30;--warn: #ff9500;--ok: #30d158;--online: #34c759;--radius-sm: 8px;--radius: 14px;--radius-lg: 20px;--radius-xl: 28px;--shadow-sm: 0 1px 2px rgba(0,0,0,.04), 0 1px 3px rgba(0,0,0,.06);--shadow: 0 4px 16px rgba(17,24,39,.06), 0 1px 4px rgba(17,24,39,.04);--shadow-lg: 0 20px 50px rgba(17,24,39,.12), 0 4px 16px rgba(17,24,39,.06);--font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC", "Helvetica Neue", Manrope, "Plus Jakarta Sans", system-ui, sans-serif;--font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace}
+.qqdash{--bg: #f5f5f7;--bg-elev: #ffffff;--bg-sunken: #fafafa;--ink: #1d1d1f;--ink-2: #3c3c43;--ink-3: #6e6e73;--ink-4: #8e8e93;--line: rgba(60, 60, 67, .12);--line-strong: rgba(60, 60, 67, .22);--accent: inherit;--accent-hover: var(--accent);--accent-soft: color-mix(in srgb, var(--accent) 8%, transparent);--accent-softer: color-mix(in srgb, var(--accent) 16%, transparent);--accent-border: color-mix(in srgb, var(--accent) 18%, transparent);--accent-border-strong: color-mix(in srgb, var(--accent) 28%, transparent);--accent-cloud: color-mix(in srgb, var(--accent) 14%, transparent);--danger: #ff3b30;--warn: #ff9500;--ok: #30d158;--online: #34c759;--radius-sm: 8px;--radius: 14px;--radius-lg: 20px;--radius-xl: 28px;--shadow-sm: 0 1px 2px rgba(0,0,0,.04), 0 1px 3px rgba(0,0,0,.06);--shadow: 0 4px 16px rgba(17,24,39,.06), 0 1px 4px rgba(17,24,39,.04);--shadow-lg: 0 20px 50px rgba(17,24,39,.12), 0 4px 16px rgba(17,24,39,.06);--font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC", "Helvetica Neue", Manrope, "Plus Jakarta Sans", system-ui, sans-serif;--font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace}
 .qqdash *{box-sizing:border-box}
 .qqdash,.qqdash{margin:0;padding:0;height:100%;background:var(--bg);color:var(--ink);font-family:var(--font-sans);font-size:14px;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;letter-spacing:-.003em}
 .qqdash a{color:inherit;text-decoration:none}
@@ -252,7 +252,7 @@ to{opacity:1;transform:none}}
 .qqdash .btn:hover{background:var(--bg-sunken);border-color:var(--ink-4)}
 .qqdash .btn.ghost{background:transparent;border-color:transparent;color:var(--ink-2)}
 .qqdash .btn.ghost:hover{background:var(--op-hover, rgba(0,0,0,.05))}
-.qqdash .btn.primary{background:var(--accent);color:#fff;box-shadow:0 1px 2px rgba(0,0,0,.06),0 4px 12px rgba(0,153,255,.22)}
+.qqdash .btn.primary{background:var(--accent);color:#fff;box-shadow:0 1px 2px rgba(0,0,0,.06),0 4px 12px color-mix(in srgb, var(--accent) 22%, transparent)}
 .qqdash .btn.primary:hover{background:var(--accent-hover)}
 .qqdash .btn.primary.outline{background:transparent;color:var(--accent);border-color:var(--accent);box-shadow:none}
 .qqdash .btn.primary.outline:hover{background:var(--accent-soft)}
@@ -282,7 +282,7 @@ to{opacity:1;transform:none}}
 .qqdash .bots-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:16px}
 .qqdash .bot-card{background:var(--op-surface, #fff);border-radius:var(--radius);padding:18px;box-shadow:var(--shadow-sm);cursor:pointer;transition:transform .18s,box-shadow .18s,border-color .18s;border:1px solid transparent;position:relative;overflow:hidden}
 .qqdash .bot-card:hover{transform:translateY(-2px);box-shadow:var(--shadow);border-color:var(--line)}
-.qqdash .bot-card:after{content:"";position:absolute;top:0;right:0;bottom:0;left:0;background:radial-gradient(120% 120% at 100% 0%,rgba(0,153,255,.06) 0%,transparent 60%);pointer-events:none}
+.qqdash .bot-card:after{content:"";position:absolute;top:0;right:0;bottom:0;left:0;background:radial-gradient(120% 120% at 100% 0%,color-mix(in srgb, var(--accent) 6%, transparent) 0%,transparent 60%);pointer-events:none}
 .qqdash .bot-head{display:flex;align-items:center;gap:12px;position:relative;z-index:1}
 .qqdash .bot-avatar{width:52px;height:52px;border-radius:50%;background:linear-gradient(135deg,#ffe0b8,#ff9e6d);display:grid;place-items:center;font-size:22px;color:#fff;font-weight:700;flex:none;box-shadow:0 2px 6px rgba(0,0,0,.08);overflow:hidden}
 .qqdash .bot-avatar img{width:100%;height:100%;object-fit:cover}
@@ -317,7 +317,7 @@ to{opacity:1;transform:none}}
 .qqdash .create-preview-card:after{display:none}
 .qqdash .create-preview-top{display:flex;align-items:center;justify-content:center;gap:12px;position:relative;z-index:1}
 .qqdash .preview-kicker-block{display:flex;flex-direction:column;gap:8px;min-width:0}
-.qqdash .preview-status{display:inline-flex;align-items:center;padding:6px 12px;border-radius:999px;font-size:11px;font-weight:700;letter-spacing:.04em;background:rgba(0,153,255,.08);color:var(--accent)}
+.qqdash .preview-status{display:inline-flex;align-items:center;padding:6px 12px;border-radius:999px;font-size:11px;font-weight:700;letter-spacing:.04em;background:color-mix(in srgb, var(--accent) 8%, transparent);color:var(--accent)}
 .qqdash .preview-caption{font-size:12px;line-height:1.5;color:var(--ink-4)}
 .qqdash .preview-avatar-shell{position:relative;width:128px;height:128px;margin:22px auto 18px;display:grid;place-items:center}
 .qqdash .preview-avatar-shell:before,.qqdash .preview-glow{display:none}
@@ -337,7 +337,7 @@ to{opacity:1;transform:none}}
 .qqdash .step{display:flex;align-items:center;gap:6px;color:var(--ink-4);font-size:12.5px;font-weight:600}
 .qqdash .step .s-dot{width:22px;height:22px;border-radius:50%;background:var(--op-sunken, rgba(0,0,0,.06));color:var(--ink-4);display:grid;place-items:center;font-size:11px;font-weight:700;font-family:var(--font-mono)}
 .qqdash .step.active{color:var(--ink)}
-.qqdash .step.active .s-dot{background:var(--accent);color:#fff;box-shadow:0 4px 10px rgba(0,153,255,.22)}
+.qqdash .step.active .s-dot{background:var(--accent);color:#fff;box-shadow:0 4px 10px color-mix(in srgb, var(--accent) 22%, transparent)}
 .qqdash .step.done .s-dot{background:var(--accent);color:#fff}
 .qqdash .step-line{flex:1;min-width:36px;height:2px;background:var(--line);border-radius:2px}
 .qqdash .form-card{width:100%;max-width:792px;background:var(--op-surface, rgba(255,255,255,.96));border-radius:24px;margin:0 auto;box-shadow:0 14px 32px rgba(15,23,42,.06);border:1px solid var(--op-border, rgba(60,60,67,.08))}
@@ -354,7 +354,7 @@ to{opacity:1;transform:none}}
 .qqdash .avatar-stage-ring{position:absolute;top:12px;right:12px;bottom:12px;left:12px;border-radius:28px;border:1px solid var(--op-border, rgba(191,219,254,.9))}
 .qqdash .avatar-stage-core{position:relative;z-index:1;width:80px;height:80px;border-radius:50%;background:var(--op-input-background, linear-gradient(180deg,#f8fafc,#e7edf5));display:grid;place-items:center;color:var(--op-subtle, #94a3b8);overflow:hidden;box-shadow:var(--op-inset-shadow, inset 0 1px rgba(255,255,255,.92),0 10px 20px rgba(148,163,184,.12))}
 .qqdash .avatar-stage-core img{width:100%;height:100%;object-fit:cover}
-.qqdash .avatar-stage-plus{position:absolute;right:12px;bottom:12px;z-index:2;width:26px;height:26px;border-radius:50%;background:var(--op-surface, #fff);color:var(--accent);display:grid;place-items:center;font-size:18px;font-weight:600;box-shadow:0 6px 14px rgba(0,153,255,.14)}
+.qqdash .avatar-stage-plus{position:absolute;right:12px;bottom:12px;z-index:2;width:26px;height:26px;border-radius:50%;background:var(--op-surface, #fff);color:var(--accent);display:grid;place-items:center;font-size:18px;font-weight:600;box-shadow:0 6px 14px color-mix(in srgb, var(--accent) 14%, transparent)}
 .qqdash .avatar-meta{flex:1;min-width:0;padding-top:4px}
 .qqdash .avatar-meta-title{font-size:16px;font-weight:700;color:var(--ink)}
 .qqdash .avatar-meta-desc{margin:6px 0 12px;color:var(--ink-3);font-size:12.5px;line-height:1.65;max-width:500px}
@@ -373,7 +373,7 @@ to{opacity:1;transform:none}}
 .qqdash .avatar-preset-grid,.qqdash .avatar-picker-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}
 .qqdash .avatar-option{display:flex;flex-direction:column;align-items:center;gap:8px;padding:10px 8px;border-radius:16px;background:var(--op-surface, #fff);border:1px solid var(--op-border, rgba(226,232,240,1));box-shadow:none;transition:transform .18s,box-shadow .18s,border-color .18s,background .18s}
 .qqdash .avatar-option:hover{transform:translateY(-1px);box-shadow:0 8px 16px rgba(15,23,42,.05);border-color:var(--accent-border-strong)}
-.qqdash .avatar-option.active{border-color:var(--accent);background:var(--accent-soft);box-shadow:0 0 0 2px var(--accent),0 0 0 6px var(--accent-soft),0 12px 22px rgba(0,153,255,.2);transform:translateY(-1px)}
+.qqdash .avatar-option.active{border-color:var(--accent);background:var(--accent-soft);box-shadow:0 0 0 2px var(--accent),0 0 0 6px var(--accent-soft),0 12px 22px color-mix(in srgb, var(--accent) 20%, transparent);transform:translateY(-1px)}
 .qqdash .avatar-option img{display:block;width:68px;height:68px;border-radius:50%;object-fit:cover}
 .qqdash .avatar-option span{font-size:11.5px;font-weight:700;color:var(--op-text, #475569)}
 .qqdash .avatar-option.active span{color:var(--accent)}
@@ -381,7 +381,7 @@ to{opacity:1;transform:none}}
 .qqdash .avatar-panel+.form-row{margin-top:22px}
 .qqdash .form-row label{display:block;font-size:12.5px;font-weight:700;color:var(--ink);margin-bottom:7px}
 .qqdash .input-wrap,.qqdash .textarea-wrap{position:relative;background:var(--op-input-background, linear-gradient(180deg,#fafafa,#f7f7f8));border-radius:16px;transition:all .15s;border:1px solid transparent}
-.qqdash .input-wrap:focus-within,.qqdash .textarea-wrap:focus-within{background:var(--op-surface, #fff);border-color:rgba(0,153,255,.38);box-shadow:0 0 0 4px rgba(0,153,255,.1)}
+.qqdash .input-wrap:focus-within,.qqdash .textarea-wrap:focus-within{background:var(--op-surface, #fff);border-color:color-mix(in srgb, var(--accent) 38%, transparent);box-shadow:0 0 0 4px color-mix(in srgb, var(--accent) 10%, transparent)}
 .qqdash .input-wrap input,.qqdash .textarea-wrap textarea{width:100%;background:none;border:none;outline:none;padding:13px 15px;font-size:13.5px;color:var(--ink)}
 .qqdash .input-wrap input{padding-right:62px}
 .qqdash .textarea-wrap textarea{min-height:112px;resize:none;line-height:1.65;padding-bottom:28px}
@@ -390,7 +390,7 @@ to{opacity:1;transform:none}}
 .qqdash .form-foot{display:flex;gap:12px;justify-content:flex-end;margin-top:24px;padding:18px 26px 24px;border-top:1px solid var(--line);background:var(--op-input-background, linear-gradient(180deg,rgba(250,250,250,.68),rgba(255,255,255,.96)))}
 .qqdash .page-connect{max-width:1120px}
 .qqdash .connect-grid{display:grid;grid-template-columns:368px minmax(0,1fr);gap:18px;align-items:start}
-.qqdash .qr-avatar{width:80px;height:80px;border-radius:50%;margin:0 auto 14px;background:linear-gradient(160deg,#2cb4ff,#0078ff);color:#fff;display:grid;place-items:center;box-shadow:0 12px 26px rgba(0,153,255,.22);overflow:hidden}
+.qqdash .qr-avatar{width:80px;height:80px;border-radius:50%;margin:0 auto 14px;background:linear-gradient(160deg,#2cb4ff,#0078ff);color:#fff;display:grid;place-items:center;box-shadow:0 12px 26px color-mix(in srgb, var(--accent) 22%, transparent);overflow:hidden}
 .qqdash .qr-avatar img{width:100%;height:100%;object-fit:cover}
 .qqdash .qr-title{font-size:17px;font-weight:700;margin:0 0 6px;letter-spacing:-.01em}
 .qqdash .qr-desc{font-size:12.5px;color:var(--ink-4);margin:0 0 18px}
@@ -441,7 +441,7 @@ to{opacity:1;transform:none}}
 .qqdash .guide-divider{display:none}
 .qqdash .guide-links{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap;flex:none}
 .qqdash .guide-link{display:inline-flex;align-items:center;gap:7px;min-height:32px;padding:0 11px;border-radius:10px;background:var(--op-surface, #fff);border:1px solid var(--op-border, rgba(60,60,67,.08));color:var(--op-muted, #2458c6);font-size:12px;font-weight:700;box-shadow:none;transition:background .15s,border-color .15s,color .15s}
-.qqdash .guide-link:hover{background:var(--op-hover, #f8fbff);border-color:rgba(0,153,255,.18);opacity:1}
+.qqdash .guide-link:hover{background:var(--op-hover, #f8fbff);border-color:color-mix(in srgb, var(--accent) 18%, transparent);opacity:1}
 .qqdash .guide-link-icon,.qqdash .guide-copy-icon{display:block;width:15px;height:15px;flex:none}
 .qqdash .guide-workbench,.qqdash .guide-workbench.has-side{display:flex;flex-direction:column;gap:10px}
 .qqdash .guide-section{background:var(--op-surface, #fff);border:1px solid var(--op-border, rgba(60,60,67,.08));border-radius:14px;padding:12px 14px;box-shadow:none}
@@ -452,13 +452,13 @@ to{opacity:1;transform:none}}
 .qqdash .guide-steps li{display:flex;gap:10px;align-items:center;padding:11px 12px;border-radius:12px;background:var(--op-sunken, #f8fafc);border:1px solid var(--op-border, rgba(60,60,67,.08))}
 .qqdash .guide-steps li.is-tip{padding:0;background:transparent;border:none;border-radius:0}
 .qqdash .guide-steps li.is-tip .guide-manual-title{margin-bottom:0}
-.qqdash .guide-step-index{width:24px;height:24px;border-radius:50%;background:rgba(0,153,255,.08);color:var(--accent);display:grid;place-items:center;font-size:10.5px;font-weight:800;font-family:var(--font-mono);flex:none}
+.qqdash .guide-step-index{width:24px;height:24px;border-radius:50%;background:color-mix(in srgb, var(--accent) 8%, transparent);color:var(--accent);display:grid;place-items:center;font-size:10.5px;font-weight:800;font-family:var(--font-mono);flex:none}
 .qqdash .guide-step-body{flex:1;min-width:0}
 .qqdash .guide-step-title{font-size:12.5px;font-weight:600;color:var(--ink);line-height:1.6}
 .qqdash .guide-code-card{margin-top:8px;display:flex;align-items:center;gap:8px;background:var(--op-sunken, #f5f8fc);border:1px solid var(--op-border, rgba(60,60,67,.08));border-radius:10px;padding:10px}
 .qqdash .guide-code-card code{flex:1;min-width:0;color:var(--op-muted, #586174);font-size:12px;font-family:var(--font-mono);line-height:1.58;white-space:pre-wrap;word-break:break-word}
 .qqdash .guide-copy-btn{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;background:var(--op-surface, #fff);border:1px solid var(--op-border, rgba(60,60,67,.08));transition:background .15s,border-color .15s;flex:none}
-.qqdash .guide-copy-btn:hover{background:var(--op-hover, #f8fbff);border-color:rgba(0,153,255,.18);box-shadow:none;transform:none}
+.qqdash .guide-copy-btn:hover{background:var(--op-hover, #f8fbff);border-color:color-mix(in srgb, var(--accent) 18%, transparent);box-shadow:none;transform:none}
 .qqdash .guide-copy-btn .app-icon{width:15px;height:15px;flex:none;color:var(--op-subtle, #929296)}
 .qqdash .guide-copy-btn .app-icon svg{width:15px;height:15px;display:block}
 .qqdash .guide-manual-card{margin-top:0;background:transparent;border-radius:0;padding:0;border:none}
@@ -469,12 +469,12 @@ to{opacity:1;transform:none}}
 .qqdash .guide-manual-value{grid-area:value;color:var(--ink);font-size:12px;font-family:var(--font-mono);line-height:1.5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .qqdash .guide-manual-value.is-secret-hidden{letter-spacing:.16em;color:var(--op-subtle, #7b8495)}
 .qqdash .guide-manual-row .guide-copy-btn{grid-area:copy;align-self:center}
-.qqdash .guide-secret-btn.is-revealed{color:var(--accent);border-color:rgba(0,153,255,.2);background:var(--op-sunken, #f8fbff)}
+.qqdash .guide-secret-btn.is-revealed{color:var(--accent);border-color:color-mix(in srgb, var(--accent) 20%, transparent);background:var(--op-sunken, #f8fbff)}
 .qqdash .manage-layout{display:grid;grid-template-columns:240px minmax(0,1fr);gap:26px;align-items:start}
 .qqdash .manage-nav{position:sticky;top:30px;z-index:2;background:var(--op-surface, rgba(255,255,255,.86));backdrop-filter:blur(16px);border-radius:22px;border:1px solid var(--op-border, rgba(60,60,67,.1));padding:10px;display:flex;flex-direction:column;gap:6px;box-shadow:var(--shadow-sm)}
 .qqdash .manage-nav .mn-item{display:flex;align-items:center;gap:10px;width:100%;padding:13px 14px;border-radius:14px;border:none;background:transparent;color:var(--ink-2);font-size:13.5px;font-weight:600;cursor:pointer;transition:background .15s,color .15s,transform .15s;text-align:left;text-decoration:none;box-sizing:border-box}
 .qqdash .manage-nav .mn-item:hover{background:var(--op-hover, rgba(0,0,0,.04));transform:translate(2px)}
-.qqdash .manage-nav .mn-item.active{background:linear-gradient(180deg,rgba(0,153,255,.12),rgba(0,153,255,.06));color:var(--accent);box-shadow:inset 0 0 0 1px rgba(0,153,255,.08)}
+.qqdash .manage-nav .mn-item.active{background:linear-gradient(180deg,color-mix(in srgb, var(--accent) 12%, transparent),color-mix(in srgb, var(--accent) 6%, transparent));color:var(--accent);box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--accent) 8%, transparent)}
 .qqdash .manage-body{display:flex;flex-direction:column;gap:18px}
 .qqdash .sec-group{background:var(--op-surface, rgba(255,255,255,.92));border-radius:22px;padding:8px;box-shadow:0 10px 24px rgba(17,24,39,.06);border:1px solid var(--op-border, rgba(60,60,67,.1))}
 .qqdash .sec-group-title{padding:12px 16px 8px;font-size:11px;font-weight:800;color:var(--ink-4);text-transform:uppercase;letter-spacing:.08em}
@@ -511,7 +511,7 @@ to{transform:rotate(360deg)}}
 .qqdash .danger-action{min-height:54px;border-radius:16px;border:1px solid var(--op-border, rgba(60,60,67,.1));background:var(--op-surface, #fff);font-size:14px;font-weight:700;transition:background .18s,border-color .18s,color .18s,transform .18s}
 .qqdash .danger-action:hover{transform:translateY(-1px)}
 .qqdash .danger-action.stop{color:var(--accent)}
-.qqdash .danger-action.stop:hover{background:rgba(0,153,255,.06);border-color:rgba(0,153,255,.18)}
+.qqdash .danger-action.stop:hover{background:color-mix(in srgb, var(--accent) 6%, transparent);border-color:color-mix(in srgb, var(--accent) 18%, transparent)}
 .qqdash .danger-action.remove{color:var(--danger)}
 .qqdash .danger-action.remove:hover{background:rgba(255,59,48,.06);border-color:rgba(255,59,48,.18)}
 .qqdash .sec-footnote{text-align:center;padding:16px 14px 8px;font-size:12px;color:var(--ink-4)}
@@ -548,7 +548,7 @@ to{transform:rotate(360deg)}}
 @keyframes modalIn{
 0%{opacity:0;transform:translateY(20px) scale(.96)}
 to{opacity:1;transform:none}}
-.qqdash .modal-header{padding:22px 24px 10px;background:var(--op-tint-background, linear-gradient(180deg,rgba(0,153,255,.08),#fff 88%));border-bottom:none}
+.qqdash .modal-header{padding:22px 24px 10px;background:var(--op-tint-background, linear-gradient(180deg,color-mix(in srgb, var(--accent) 8%, transparent),#fff 88%));border-bottom:none}
 .qqdash .modal-header h3{font-size:18px;font-weight:700;margin:0 0 4px;letter-spacing:-.01em}
 .qqdash .modal-header p{color:var(--ink-4);font-size:13px;margin:0}
 .qqdash .modal-foot{display:flex;gap:12px;padding:18px 24px 24px}
@@ -565,11 +565,11 @@ to{opacity:1;transform:none}}
 .qqdash .account-item.selected .a-check{background:var(--accent);border-color:var(--accent)}
 .qqdash .account-item.selected .a-check:after{content:"";position:absolute;top:50%;left:50%;width:10px;height:5px;border-left:2px solid #fff;border-bottom:2px solid #fff;transform:translate(-50%,-58%) rotate(-45deg)}
 .qqdash .modal.confirm-connect{width:456px;padding:0;overflow:hidden}
-.qqdash .cc-topbar{display:grid;grid-template-columns:auto 1fr auto;align-items:center;padding:12px 16px;background:var(--op-tint-background, linear-gradient(180deg,rgba(0,153,255,.08),#fff 92%));border-bottom:none}
+.qqdash .cc-topbar{display:grid;grid-template-columns:auto 1fr auto;align-items:center;padding:12px 16px;background:var(--op-tint-background, linear-gradient(180deg,color-mix(in srgb, var(--accent) 8%, transparent),#fff 92%));border-bottom:none}
 .qqdash .cc-topbar-title{text-align:center;font-size:14px;font-weight:600}
 .qqdash .cc-body{padding:24px 24px 6px;text-align:center}
 .qqdash .link-icons{display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:18px}
-.qqdash .li-box{width:50px;height:50px;border-radius:14px;background:var(--accent);box-shadow:0 8px 18px rgba(0,153,255,.18)}
+.qqdash .li-box{width:50px;height:50px;border-radius:14px;background:var(--accent);box-shadow:0 8px 18px color-mix(in srgb, var(--accent) 18%, transparent)}
 .qqdash .li-box.li-a{background:var(--accent)}
 .qqdash .li-box.li-b{background:linear-gradient(160deg,#2cb4ff,#0078ff);display:grid;place-items:center;color:#fff;overflow:hidden}
 .qqdash .li-box.li-b img{width:100%;height:100%;object-fit:cover}
@@ -603,7 +603,7 @@ to{opacity:1;transform:none}}
 .qqdash .bam-input-wrap{margin:0 24px 18px}
 .qqdash .bam-input-wrap input{width:100%;border:1px solid transparent;border-radius:14px;background:var(--op-sunken, #f5f5f6);padding:14px 16px;font-size:14px;line-height:1.2;color:var(--ink);transition:all .15s}
 .qqdash .bam-input-wrap input::placeholder{color:var(--op-subtle, rgba(29,29,31,.28))}
-.qqdash .bam-input-wrap input:focus{outline:none;background:var(--op-surface, #fff);border-color:rgba(0,153,255,.26);box-shadow:0 0 0 4px rgba(0,153,255,.1)}
+.qqdash .bam-input-wrap input:focus{outline:none;background:var(--op-surface, #fff);border-color:color-mix(in srgb, var(--accent) 26%, transparent);box-shadow:0 0 0 4px color-mix(in srgb, var(--accent) 10%, transparent)}
 .qqdash .bam-foot{display:flex;gap:12px;padding:2px 24px 24px}
 .qqdash .bam-foot .btn.large{min-height:48px;border-radius:16px;font-size:14px;font-weight:700}
 .qqdash .bam-foot .btn{flex:1;justify-content:center}
@@ -624,7 +624,7 @@ to{opacity:1;transform:none}}
 .qqdash .editor-body{padding:18px 28px 0}
 .qqdash .editor-field-wrap{position:relative}
 .qqdash .editor-input{width:100%;border:1px solid var(--op-border, rgba(60,60,67,.12));background:var(--op-input-background, linear-gradient(180deg,#fafafa,#f7f7f8));border-radius:16px;padding:15px 16px;font-size:15px;line-height:1.6;color:var(--ink);outline:none;transition:border-color .15s,box-shadow .15s,background .15s}
-.qqdash .editor-input:focus{background:var(--op-surface, #fff);border-color:rgba(0,153,255,.36);box-shadow:0 0 0 4px rgba(0,153,255,.1)}
+.qqdash .editor-input:focus{background:var(--op-surface, #fff);border-color:color-mix(in srgb, var(--accent) 36%, transparent);box-shadow:0 0 0 4px color-mix(in srgb, var(--accent) 10%, transparent)}
 .qqdash .editor-textarea{min-height:160px;resize:none}
 .qqdash .editor-count{text-align:right;font-size:12px;color:var(--ink-4);font-family:var(--font-mono);padding:10px 2px 0}
 .qqdash .editor-count.is-limit{color:#fa5151}
@@ -696,7 +696,7 @@ to{opacity:1;transform:none}}
 .qqdash .user-popover-account-mail{min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;font-weight:400;color:var(--ink-4);line-height:1.2}
 .qqdash .user-popover-account-item.selected .user-popover-account-mail{color:var(--ink-4)}
 .qqdash .user-popover-auth-tag{flex:none;display:inline-flex;align-items:center;height:22px;padding:0 10px;border-radius:999px;font-size:12px;font-weight:500;line-height:1;letter-spacing:0}
-.qqdash .user-popover-auth-tag.auth-enterprise{color:#09f;background:var(--accent-soft)}
+.qqdash .user-popover-auth-tag.auth-enterprise{color:var(--accent);background:var(--accent-soft)}
 .qqdash .user-popover-auth-tag.auth-personal{color:var(--op-purple, #7d5cff);background:rgba(125,92,255,.16)}
 .qqdash .user-popover-auth-tag.auth-unverified{color:#ff9500;background:rgba(255,149,0,.18)}
 .qqdash .user-popover-logout{display:flex;align-items:center;gap:10px;width:100%;padding:12px 18px;font-size:13px;font-weight:600;color:var(--ink-2);cursor:pointer;transition:background .15s,color .15s;border:none;background:none;text-align:left}
@@ -843,8 +843,8 @@ to{opacity:1}}
 .qqdash #userMiniTrigger .user-mini-subject-text{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;overflow:hidden;text-align:left}
 .qqdash #userMiniTrigger .user-mini-subject-name{font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .qqdash #userMiniTrigger .user-mini-subject-email{font-size:10.5px;font-weight:500;color:var(--ink-4);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.qqdash #userMiniTrigger .user-mini-subject-tag{flex:none;padding:2px 6px;border-radius:999px;background:rgba(0,153,255,.16);color:var(--accent);font-size:10px;font-weight:700;letter-spacing:.02em}
-.qqdash #userMiniTrigger:hover .user-mini-subject{background:rgba(0,153,255,.16)}
+.qqdash #userMiniTrigger .user-mini-subject-tag{flex:none;padding:2px 6px;border-radius:999px;background:color-mix(in srgb, var(--accent) 16%, transparent);color:var(--accent);font-size:10px;font-weight:700;letter-spacing:.02em}
+.qqdash #userMiniTrigger:hover .user-mini-subject{background:color-mix(in srgb, var(--accent) 16%, transparent)}
 .qqdash #userMiniTrigger .user-mini-subject[data-auth-type=personal]{background:rgba(125,92,255,.08);border-color:rgba(125,92,255,.22)}
 .qqdash #userMiniTrigger .user-mini-subject[data-auth-type=personal] .user-mini-subject-tag{background:rgba(125,92,255,.16);color:var(--op-purple, #7d5cff)}
 .qqdash #userMiniTrigger .user-mini-subject[data-auth-type=unverified]{background:rgba(255,149,0,.08);border-color:rgba(255,149,0,.28)}
@@ -1016,8 +1016,8 @@ to{opacity:1}}
 .qqdash .lab-body{padding:8px 28px 4px}
 .qqdash .lab-field-label{font-size:13px;font-weight:600;color:var(--ink-2);margin-bottom:8px}
 .qqdash .lab-query-row{display:flex;align-items:center;gap:10px}
-.qqdash .lab-input{flex:none;width:402px;height:37px;min-width:0;border:1.5px solid rgba(0,153,255,.36);background:var(--op-surface, #fff);border-radius:12px;padding:0 14px;font-size:14px;line-height:1.4;color:var(--ink);outline:none;box-shadow:0 0 0 4px rgba(0,153,255,.08);transition:border-color .15s,box-shadow .15s}
-.qqdash .lab-input:focus{border-color:var(--accent);box-shadow:0 0 0 4px rgba(0,153,255,.12)}
+.qqdash .lab-input{flex:none;width:402px;height:37px;min-width:0;border:1.5px solid color-mix(in srgb, var(--accent) 36%, transparent);background:var(--op-surface, #fff);border-radius:12px;padding:0 14px;font-size:14px;line-height:1.4;color:var(--ink);outline:none;box-shadow:0 0 0 4px color-mix(in srgb, var(--accent) 8%, transparent);transition:border-color .15s,box-shadow .15s}
+.qqdash .lab-input:focus{border-color:var(--accent);box-shadow:0 0 0 4px color-mix(in srgb, var(--accent) 12%, transparent)}
 .qqdash .lab-input:disabled{background:var(--bg-sunken)}
 .qqdash .lab-query-row .btn{flex:none;min-width:56px;height:37px;padding:0;justify-content:center;border-radius:12px}
 .qqdash .lab-tip{margin-top:12px;font-size:12.5px;line-height:1.55;color:var(--ink-4)}
@@ -1038,7 +1038,7 @@ to{opacity:1}}
 .qqdash .ec-channel-foot .btn,.qqdash .ec-events-foot .btn{min-width:120px;justify-content:center}
 .qqdash .ec-channel-card{position:relative;display:flex;align-items:flex-start;gap:12px;padding:14px 16px;border-radius:14px;background:var(--op-surface, #fff);border:1.5px solid var(--line);cursor:pointer;text-align:left;transition:border-color .15s,background .15s,box-shadow .15s}
 .qqdash .ec-channel-card:hover{border-color:var(--accent-border-strong)}
-.qqdash .ec-channel-card.active{border-color:var(--accent);background:var(--accent-soft);box-shadow:0 4px 16px rgba(0,153,255,.1)}
+.qqdash .ec-channel-card.active{border-color:var(--accent);background:var(--accent-soft);box-shadow:0 4px 16px color-mix(in srgb, var(--accent) 10%, transparent)}
 .qqdash .ec-channel-icon{width:36px;height:36px;border-radius:10px;background:var(--bg-sunken);color:var(--ink-3);display:grid;place-items:center;flex:none;transition:background .15s,color .15s}
 .qqdash .ec-channel-card.active .ec-channel-icon{background:var(--accent);color:#fff}
 .qqdash .ec-channel-text{flex:1;min-width:0}
@@ -1211,7 +1211,7 @@ to{opacity:1}}
 .qqdash .tp-foot-btns .btn:disabled{opacity:.5;cursor:not-allowed}
 .qqdash .tp-item{display:flex;align-items:center;gap:12px;padding:10px 14px;border:1px solid var(--line);border-radius:12px;background:var(--op-surface, #fff);cursor:pointer;transition:border-color .15s,background .15s,box-shadow .15s}
 .qqdash .tp-item:hover:not(.is-existed){border-color:var(--accent-border-strong);background:var(--accent-soft)}
-.qqdash .tp-item.is-checked{border-color:var(--accent);background:var(--accent-soft);box-shadow:0 2px 6px rgba(0,153,255,.08)}
+.qqdash .tp-item.is-checked{border-color:var(--accent);background:var(--accent-soft);box-shadow:0 2px 6px color-mix(in srgb, var(--accent) 8%, transparent)}
 .qqdash .tp-item.is-existed{opacity:.55;cursor:not-allowed;background:var(--bg-sunken)}
 .qqdash .tp-item input[type=checkbox]{flex:none;width:16px;height:16px;accent-color:var(--accent);cursor:pointer}
 .qqdash .tp-item.is-existed input[type=checkbox]{cursor:not-allowed}
@@ -1263,7 +1263,7 @@ to{opacity:1}}
 .qqdash .guide-tab.active:after{background:var(--accent)}
 .qqdash .guide-tab-icon{flex:none;width:16px;height:16px;display:block}
 .qqdash .guide-manual-trigger{cursor:pointer;user-select:none;padding:4px 6px;margin:-4px -6px 6px;border-radius:6px}
-.qqdash .guide-manual-trigger:focus-visible{outline:2px solid var(--accent, #09f);outline-offset:2px}
+.qqdash .guide-manual-trigger:focus-visible{outline:2px solid var(--accent, var(--accent));outline-offset:2px}
 .qqdash .guide-manual-trigger .row-chev{color:var(--ink-4, #8a8a8a);transition:transform .2s ease;flex:none}
 .qqdash .guide-manual-trigger-state{display:inline-flex;align-items:center;gap:2px;flex:none;font-size:12px;color:var(--ink-4, #8a8a8a);line-height:1}
 .qqdash .guide-manual-trigger-text{line-height:1}
@@ -1316,7 +1316,7 @@ to{opacity:1}}
 .qqdash .group-admin-card__modal-sub{margin:6px 0 0;font-size:12px;line-height:1.5;color:var(--ink-4, #8e8e93)}
 .qqdash .group-admin-card__close{display:inline-flex;flex:none;align-items:center;justify-content:center;width:28px;height:28px;padding:0;border:0;border-radius:8px;background:transparent;color:var(--ink-3, #6e6e73);cursor:pointer;transition:background .15s ease,color .15s ease}
 .qqdash .group-admin-card__close:hover{background:var(--bg-sunken, #fafafa);color:var(--ink, #1d1d1f)}
-.qqdash .group-admin-card__close:focus-visible{outline:2px solid var(--accent, #09f);outline-offset:2px}
+.qqdash .group-admin-card__close:focus-visible{outline:2px solid var(--accent, var(--accent));outline-offset:2px}
 .qqdash .group-admin-card__modal-body{min-height:0;padding:8px 24px 20px;overflow-y:auto}
 .qqdash .group-admin-card__modal-foot{display:flex;justify-content:flex-end;gap:8px;padding:16px 24px 20px;border-top:1px solid var(--line, rgba(60, 60, 67, .12));background:var(--op-surface, #fff)}
 .qqdash .group-admin-card__modal-foot .btn{min-width:80px;min-height:38px;padding:0 16px;border-radius:10px;justify-content:center}
@@ -1330,15 +1330,15 @@ to{opacity:1}}
 .qqdash .group-admin-card__selection-count{color:var(--ink-4);font-size:11px}
 .qqdash .group-admin-card__round-check{flex:none;display:inline-grid;place-content:center;width:18px;height:18px;margin:0;-webkit-appearance:none;appearance:none;border:1.5px solid var(--op-border-strong, rgba(60,60,67,.24));border-radius:50%;background:var(--op-surface, #fff);cursor:pointer;transition:background-color .15s ease,border-color .15s ease,box-shadow .15s ease}
 .qqdash .group-admin-card__round-check:before{width:8px;height:4px;content:"";border-bottom:2px solid #fff;border-left:2px solid #fff;transform:translateY(-1px) rotate(-45deg) scale(0);transform-origin:center;transition:transform .12s ease-out}
-.qqdash .group-admin-card__round-check:checked{border-color:var(--accent, #09f);background:var(--accent, #09f);box-shadow:0 0 0 2px rgba(0,153,255,.1)}
+.qqdash .group-admin-card__round-check:checked{border-color:var(--accent, var(--accent));background:var(--accent, var(--accent));box-shadow:0 0 0 2px color-mix(in srgb, var(--accent) 10%, transparent)}
 .qqdash .group-admin-card__round-check:checked:before{transform:translateY(-1px) rotate(-45deg) scale(1)}
-.qqdash .group-admin-card__round-check:indeterminate{border-color:var(--accent, #09f);background:var(--accent, #09f)}
+.qqdash .group-admin-card__round-check:indeterminate{border-color:var(--accent, var(--accent));background:var(--accent, var(--accent))}
 .qqdash .group-admin-card__round-check:indeterminate:before{width:8px;height:0;border-bottom:0;border-left:0;border-top:2px solid #fff;transform:none}
-.qqdash .group-admin-card__round-check:focus-visible{outline:3px solid rgba(0,153,255,.18);outline-offset:2px}
+.qqdash .group-admin-card__round-check:focus-visible{outline:3px solid color-mix(in srgb, var(--accent) 18%, transparent);outline-offset:2px}
 .qqdash .group-admin-card__round-check:disabled{cursor:not-allowed;opacity:.45}
 .qqdash .group-admin-card__select-all{display:inline-flex;align-items:center;gap:10px;color:var(--ink-2, #3c3c43);font-size:12px;font-weight:500;cursor:pointer}
-.qqdash .group-admin-card__reset{padding:4px 0;border:0;background:transparent;color:var(--accent, #09f);font-size:12px;font-weight:500;cursor:pointer}
-.qqdash .group-admin-card__reset:disabled{color:var(--accent, #09f);cursor:not-allowed;opacity:.3}
+.qqdash .group-admin-card__reset{padding:4px 0;border:0;background:transparent;color:var(--accent, var(--accent));font-size:12px;font-weight:500;cursor:pointer}
+.qqdash .group-admin-card__reset:disabled{color:var(--accent, var(--accent));cursor:not-allowed;opacity:.3}
 .qqdash .group-admin-card__reset:hover:not(:disabled){opacity:.72}
 .qqdash .group-admin-card__permission-options{overflow:hidden;border:1px solid var(--op-border, rgba(60,60,67,.08));border-radius:10px;background:var(--op-surface, #fff)}
 .qqdash .group-admin-card__permission-option{display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:48px;padding:0 16px;color:var(--ink, #1d1d1f);font-size:13px;font-weight:500}
@@ -1362,7 +1362,7 @@ to{opacity:1}}
 .qqdash .group-admin-card__recommend-empty{display:flex;align-items:center;justify-content:center;min-height:120px;margin:0;color:var(--ink-4, #8e8e93);font-size:12px}
 .qqdash .group-admin-card__recommend-row{display:flex;align-items:center;gap:10px;min-height:58px;padding:10px 12px;border-radius:10px;background:var(--bg-sunken, #fafafa)}
 .qqdash .group-admin-card__recommend-info{display:flex;flex:1;flex-direction:column;gap:2px;min-width:0}
-.qqdash .group-admin-card__recommend-add{flex:none;padding:6px 8px;border:0;background:transparent;color:var(--accent, #09f);font-size:12px;font-weight:700;cursor:pointer}
+.qqdash .group-admin-card__recommend-add{flex:none;padding:6px 8px;border:0;background:transparent;color:var(--accent, var(--accent));font-size:12px;font-weight:700;cursor:pointer}
 .qqdash .group-admin-card__recommend-add:disabled{color:var(--ink-4, #8e8e93);cursor:default}
 .qqdash .group-admin-card__recommend-add:hover:not(:disabled){text-decoration:underline}
 .qqdash .group-admin-card__whitelist-avatar{position:relative;overflow:hidden;display:inline-flex;flex:none;align-items:center;justify-content:center;width:34px;height:34px;font-size:14px;font-weight:600;color:#fff;border-radius:50%}
@@ -1379,14 +1379,14 @@ to{opacity:1}}
 .qqdash .group-admin-card__whitelist-error{flex:0 1 160px;width:160px;min-width:0;overflow:hidden;color:var(--danger, #ff3b30);font-size:11px;font-weight:400;line-height:1.3;text-align:right;text-overflow:ellipsis;white-space:nowrap}
 .qqdash .group-admin-card__whitelist-input-row{display:flex;align-items:center;gap:8px}
 .qqdash .group-admin-card__whitelist-input-row input{width:170px;min-width:0;height:28px;padding:3px 9px;border:1px solid var(--line-strong, rgba(60, 60, 67, .22));border-radius:7px;outline:0;background:var(--op-surface, #fff);color:var(--ink, #1d1d1f);font-size:12px;font-weight:400;transition:border-color .15s ease,box-shadow .15s ease}
-.qqdash .group-admin-card__whitelist-input-row input:focus{border-color:var(--accent, #09f);box-shadow:0 0 0 3px rgba(0,153,255,.08)}
+.qqdash .group-admin-card__whitelist-input-row input:focus{border-color:var(--accent, var(--accent));box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 8%, transparent)}
 .qqdash .group-admin-card__whitelist-input-row input::placeholder{color:var(--ink-4, #8e8e93)}
-.qqdash .group-admin-card__add-button{align-self:center;height:28px;min-height:28px;padding:0 12px;border:1px solid var(--accent, #09f);border-radius:7px;background:var(--accent, #09f);color:#fff;font-size:12px;font-weight:600;cursor:pointer;transition:opacity .15s ease}
+.qqdash .group-admin-card__add-button{align-self:center;height:28px;min-height:28px;padding:0 12px;border:1px solid var(--accent, var(--accent));border-radius:7px;background:var(--accent, var(--accent));color:#fff;font-size:12px;font-weight:600;cursor:pointer;transition:opacity .15s ease}
 .qqdash .group-admin-card__add-button:disabled{cursor:not-allowed;opacity:.45}
-.qqdash .group-admin-card__add-button:focus-visible{outline:2px solid var(--accent, #09f);outline-offset:2px}
+.qqdash .group-admin-card__add-button:focus-visible{outline:2px solid var(--accent, var(--accent));outline-offset:2px}
 .qqdash .group-admin-card__whitelist-list{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;max-height:227px;padding-right:4px;margin-top:10px;overflow-y:auto;align-content:start;scrollbar-gutter:stable}
 .qqdash .group-admin-card__whitelist-item{position:relative;display:flex;align-items:center;gap:10px;min-width:0;min-height:58px;padding:9px 10px;border:1px solid var(--line, rgba(60, 60, 67, .12));border-radius:10px;background:var(--op-surface, #fff);transition:border-color .15s ease,box-shadow .15s ease}
-.qqdash .group-admin-card__whitelist-item:hover,.qqdash .group-admin-card__whitelist-item:focus-within{border-color:var(--accent-border-strong, rgba(0, 153, 255, .28));box-shadow:0 2px 8px rgba(17,24,39,.04)}
+.qqdash .group-admin-card__whitelist-item:hover,.qqdash .group-admin-card__whitelist-item:focus-within{border-color:var(--accent-border-strong, color-mix(in srgb, var(--accent) 28%, transparent));box-shadow:0 2px 8px rgba(17,24,39,.04)}
 .qqdash .group-admin-card__whitelist-avatar{position:relative;overflow:hidden;display:inline-flex;flex:none;align-items:center;justify-content:center;width:34px;height:34px;font-size:14px;font-weight:600;color:#fff;border-radius:50%}
 .qqdash .group-admin-card__whitelist-avatar-img{position:absolute;top:0;right:0;bottom:0;left:0;width:100%;height:100%;object-fit:cover}
 .qqdash .group-admin-card__whitelist-info{display:flex;flex:1;flex-direction:column;gap:2px;min-width:0}
@@ -1396,10 +1396,10 @@ to{opacity:1}}
 .qqdash .group-admin-card__whitelist-name-status{display:flex;min-width:0;align-items:center;gap:4px;color:var(--ink-2, #3c3c43);font-size:12px;font-weight:600;line-height:1.45;white-space:nowrap}
 .qqdash .group-admin-card__whitelist-name-status.is-loading{color:var(--ink-4, #8e8e93);font-weight:500}
 .qqdash .group-admin-card__whitelist-help{display:inline-flex;flex:none;align-items:center;justify-content:center;width:14px;height:14px;border:1px solid var(--ink-4, #8e8e93);border-radius:50%;color:var(--ink-4, #8e8e93);font-size:10px;font-weight:600;line-height:1;cursor:help}
-.qqdash .group-admin-card__whitelist-help:focus-visible{outline:2px solid var(--accent, #09f);outline-offset:1px}
+.qqdash .group-admin-card__whitelist-help:focus-visible{outline:2px solid var(--accent, var(--accent));outline-offset:1px}
 .qqdash .group-admin-card__remove-button{position:absolute;top:50%;right:6px;display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;padding:0;border:0;border-radius:7px;background:var(--op-surface, #fff);box-shadow:0 0 0 3px var(--op-surface, #fff);color:var(--op-subtle, #9a9aa0);cursor:pointer;opacity:0;visibility:hidden;transform:translateY(-50%);transition:opacity .15s ease,visibility .15s ease,background-color .15s ease,color .15s ease}
 .qqdash .group-admin-card__remove-button:hover{background-image:linear-gradient(rgba(255,59,48,.08),rgba(255,59,48,.08));color:var(--danger, #ff3b30)}
-.qqdash .group-admin-card__remove-button:focus-visible{outline:2px solid var(--accent, #09f);outline-offset:1px}
+.qqdash .group-admin-card__remove-button:focus-visible{outline:2px solid var(--accent, var(--accent));outline-offset:1px}
 .qqdash .group-admin-card__whitelist-item:hover .group-admin-card__remove-button,.qqdash .group-admin-card__whitelist-item:focus-within .group-admin-card__remove-button{opacity:1;visibility:visible}
 @media(hover:none){
 .qqdash .group-admin-card__remove-button{opacity:1;visibility:visible}}
@@ -1423,12 +1423,12 @@ to{opacity:1}}
 .qqdash .group-admin-card__panel-actions{display:flex;flex:none;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:6px}
 .qqdash .group-admin-card__action-button{display:inline-flex;flex:none;align-items:center;gap:4px;height:24px;padding:0 8px;border:1px solid var(--line-strong, rgba(60, 60, 67, .22));border-radius:6px;background:var(--op-surface, #fff);color:var(--ink, #1d1d1f);font-size:12px;font-weight:500;line-height:1;cursor:pointer;transition:background .15s ease,border-color .15s ease,color .15s ease}
 .qqdash .group-admin-card__action-button:disabled{cursor:not-allowed;opacity:.55}
-.qqdash .group-admin-card__action-button:focus-visible{outline:2px solid var(--accent, #09f);outline-offset:2px}
+.qqdash .group-admin-card__action-button:focus-visible{outline:2px solid var(--accent, var(--accent));outline-offset:2px}
 .qqdash .group-admin-card__action-button:hover:not(:disabled){background:var(--op-hover, rgba(60,60,67,.08));border-color:var(--op-border-strong, rgba(60,60,67,.16));color:var(--ink, #1d1d1f)}
 .qqdash .group-admin-card__badge{display:inline-flex;flex:none;align-items:center;justify-content:center;min-width:16px;height:16px;padding:0 4px;border-radius:999px;background:var(--op-sunken, rgba(60,60,67,.08));color:var(--ink-2, #3c3c43);font-size:10px;font-weight:500;line-height:1;white-space:nowrap;font-variant-numeric:tabular-nums}
 .qqdash .group-admin-card__chips{display:flex;min-width:0;flex-wrap:wrap;align-items:center;gap:6px 8px}
 .qqdash .group-admin-card__chip{display:inline-flex;flex:none;align-items:center;gap:5px;padding:3px 8px;border:1px solid var(--line, rgba(60, 60, 67, .12));border-radius:6px;background:var(--op-surface, #fff);color:var(--ink-2, #3c3c43);font-size:12px;line-height:1.35;white-space:nowrap}
-.qqdash .group-admin-card__chip .group-admin-card__chip-check{flex:none;color:var(--accent, #09f)}
+.qqdash .group-admin-card__chip .group-admin-card__chip-check{flex:none;color:var(--accent, var(--accent))}
 .qqdash .group-admin-card__chip-empty{padding:5px 0;color:var(--ink-4, #8e8e93);font-size:12px}
 @media(max-width:760px){
 .qqdash .group-admin-card{padding:18px 12px 20px}
@@ -1437,7 +1437,7 @@ to{opacity:1}}
 .qqdash .manage-section{display:flex;flex-direction:column;gap:18px}
 .qqdash .scope-intro{padding:12px 16px 4px}
 .qqdash .scope-intro .scope-intro-lead{margin:0 0 8px;font-size:13px;line-height:1.6;color:var(--ink-2, #4a4a4a)}
-.qqdash .scope-intro .scope-intro-link{color:var(--accent, #09f);text-decoration:none}
+.qqdash .scope-intro .scope-intro-link{color:var(--accent, var(--accent));text-decoration:none}
 .qqdash .scope-intro .scope-intro-link:hover{text-decoration:underline}
 .qqdash .scope-intro .scope-intro-list{margin:0 0 10px;padding-left:20px;font-size:13px;line-height:1.7;color:var(--ink-2, #4a4a4a)}
 .qqdash .scope-intro .scope-intro-list li{list-style:disc}
@@ -1447,7 +1447,7 @@ to{opacity:1}}
 .qqdash .sec-group-title.auth-title{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .qqdash .auth-intro-trigger{display:inline-flex;align-items:center;gap:2px;padding:2px 4px;font-size:13px;font-weight:400;color:var(--ink-4, #8a8a8a);cursor:pointer;user-select:none;border-radius:4px;transition:color .15s ease,background-color .15s ease}
 .qqdash .auth-intro-trigger:hover{color:var(--ink-2, #4a4a4a);background-color:var(--op-hover, rgba(0,0,0,.04))}
-.qqdash .auth-intro-trigger:focus-visible{outline:2px solid var(--accent, #09f);outline-offset:2px}
+.qqdash .auth-intro-trigger:focus-visible{outline:2px solid var(--accent, var(--accent));outline-offset:2px}
 .qqdash .auth-intro-trigger .row-chev{transition:transform .2s ease}
 .qqdash .auth-intro-trigger-text{line-height:1}
 .qqdash .sec-group-title.channel-title,.qqdash .sec-group-title.friend-title,.qqdash .sec-group-title.group-title{display:flex;align-items:center;justify-content:space-between;gap:8px}
@@ -1459,7 +1459,7 @@ to{opacity:1}}
 .qqdash .pause-service-btn:hover{background-color:rgba(255,59,48,.06)}
 .qqdash .pause-service-btn:focus-visible{outline:2px solid var(--danger, #ff3b30);outline-offset:-2px}
 .qqdash .manage-section,.qqdash .manage-section{display:flex;flex-direction:column;gap:18px}
-.qqdash .row-value.ua-list{font-size:13px;color:#09f}
+.qqdash .row-value.ua-list{font-size:13px;color:var(--accent)}
 .qqdash .conn-status{display:flex;align-items:center;min-width:0;gap:8px}
 .qqdash .conn-status-text{flex-shrink:0;font-size:12px;color:var(--ink-4)}
 .qqdash .conn-status-dot{width:7px;height:7px;flex-shrink:0;border-radius:50%;background:var(--online)}
@@ -1481,9 +1481,9 @@ to{opacity:1}}
 .qqdash .breadcrumb-bar{display:flex;align-items:center;gap:8px;padding:8px 8px 4px;margin-bottom:4px}
 .qqdash .breadcrumb-parent{display:inline-flex;align-items:center;gap:6px;padding:4px 2px;border:0;background:transparent;color:var(--ink-3, #606266);font-size:13px;font-weight:500;cursor:pointer;white-space:nowrap;transition:color .18s}
 .qqdash .breadcrumb-parent .app-icon{transition:transform .18s}
-.qqdash .breadcrumb-parent:hover{color:var(--accent, #09f)}
+.qqdash .breadcrumb-parent:hover{color:var(--accent, var(--accent))}
 .qqdash .breadcrumb-parent:hover .app-icon{transform:translate(-2px)}
-.qqdash .breadcrumb-parent:focus-visible{outline:2px solid var(--accent, #09f);outline-offset:2px}
+.qqdash .breadcrumb-parent:focus-visible{outline:2px solid var(--accent, var(--accent));outline-offset:2px}
 .qqdash .breadcrumb-sep{color:var(--ink-5, #c0c4cc);user-select:none}
 .qqdash .breadcrumb-current{color:var(--ink-2, #3c3c43);font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .qqdash .switch-service-panel{display:flex;flex-direction:column}
@@ -1516,7 +1516,7 @@ to{opacity:1}}
 .qqdash .mc-type-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
 .qqdash .mc-type-card{position:relative;display:flex;align-items:center;gap:10px;padding:13px;border:1px solid var(--line);border-radius:13px;text-align:left;color:var(--ink-3);transition:.16s ease}
 .qqdash .mc-type-card:hover{border-color:var(--line-strong);background:var(--bg-sunken)}
-.qqdash .mc-type-card.active{border-color:var(--accent);background:var(--accent-soft);color:var(--accent);box-shadow:0 4px 16px rgba(0,153,255,.1)}
+.qqdash .mc-type-card.active{border-color:var(--accent);background:var(--accent-soft);color:var(--accent);box-shadow:0 4px 16px color-mix(in srgb, var(--accent) 10%, transparent)}
 .qqdash .mc-type-copy{display:flex;min-width:0;flex:1;flex-direction:column;gap:2px;padding-right:24px}
 .qqdash .mc-type-card b{color:var(--ink);font-size:13px}
 .qqdash .mc-type-card small{color:var(--ink-4);font-size:11px}
@@ -1644,7 +1644,7 @@ to{transform:rotate(360deg)}}
 .qqdash .panel-title-row{display:flex;align-items:center;gap:8px}
 .qqdash .panel-title{margin:0;font-size:18px;font-weight:600;color:var(--ink, #1d1d1f);line-height:1.4}
 .qqdash .panel-sub{margin:4px 0 0;color:var(--ink-3, #606266);font-size:13px;line-height:1.5}
-.qqdash .panel-sub-link{color:var(--accent, #09f);text-decoration:none}
+.qqdash .panel-sub-link{color:var(--accent, var(--accent));text-decoration:none}
 .qqdash .panel-sub-link:hover{text-decoration:underline}
 .qqdash .ec-body{display:flex;flex-direction:column;gap:18px}
 .qqdash .ec-events-empty{padding:24px 0;text-align:center;color:var(--text-tertiary, #999);font-size:14px}
@@ -1652,8 +1652,8 @@ to{transform:rotate(360deg)}}
 .qqdash .ec-channel-extra{margin-top:14px;padding-top:14px;border-top:1px dashed var(--border-color, #eaeaea)}
 .qqdash .ec-channel-extra-title{margin-bottom:8px;color:var(--text-secondary, #666);font-weight:600;font-size:13px}
 .qqdash .ec-editable{cursor:pointer}
-.qqdash .ec-editable:hover{color:var(--accent, #09f)}
-.qqdash .ec-channel-current{margin-left:8px;text-transform:none;color:var(--accent, #09f)}
+.qqdash .ec-editable:hover{color:var(--accent, var(--accent))}
+.qqdash .ec-channel-current{margin-left:8px;text-transform:none;color:var(--accent, var(--accent))}
 .qqdash .ec-channel-card .ec-channel-icon{color:var(--ink, #1d1d1f)}
 .qqdash .ec-channel-card.active .ec-channel-icon{color:#fff}
 .qqdash .manage-section{display:flex;flex-direction:column;gap:18px}

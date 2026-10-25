@@ -114,13 +114,13 @@ const emit = defineEmits(['action', 'close'])
   background:var(--line, #e5e5ea)
 }
 .login-dialog-progress span.active {
-  color:#0099ff;
+  color:var(--accent);
   font-weight:700
 }
 .login-dialog-progress span.active:before {
-  border-color:#0099ff;
-  background:#0099ff;
-  box-shadow:0 0 0 4px rgba(0,153,255,.12)
+  border-color:var(--accent);
+  background:var(--accent);
+  box-shadow:0 0 0 4px color-mix(in srgb, var(--accent) 12%, transparent)
 }
 .login-dialog-progress span.done:before {
   border-color:#25b47e;
@@ -159,8 +159,8 @@ const emit = defineEmits(['action', 'close'])
 .login-dialog-spinner {
   width:26px;
   height:26px;
-  border:3px solid rgba(0,153,255,.12);
-  border-top-color:#0099ff;
+  border:3px solid color-mix(in srgb, var(--accent) 12%, transparent);
+  border-top-color:var(--accent);
   border-radius:50%;
   animation:login-dialog-spin .8s linear infinite
 }
@@ -169,7 +169,7 @@ const emit = defineEmits(['action', 'close'])
 }
 .login-dialog-status {
   margin:16px 0 12px;
-  color:#0099ff;
+  color:var(--accent);
   font-size:14px;
   font-weight:600
 }
@@ -201,8 +201,8 @@ const emit = defineEmits(['action', 'close'])
   cursor:not-allowed
 }
 .login-dialog-action.primary {
-  border:1px solid #0099ff;
-  background:#0099ff;
+  border:1px solid var(--accent);
+  background:var(--accent);
   color:#fff
 }
 .login-dialog-action.ghost {

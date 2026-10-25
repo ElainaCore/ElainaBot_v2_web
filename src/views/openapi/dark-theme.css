@@ -1,4 +1,25 @@
-/* Follow the panel preference while retaining the official dashboard's light palette. */
+/* Inherit the panel palette in both modes; local dashboard tokens must not mask it. */
+.qqdash.qqdash {
+  --bg: inherit;
+  --bg-elev: var(--bg2);
+  --bg-sunken: var(--bg3);
+  --ink: var(--text);
+  --ink-2: var(--text);
+  --ink-3: var(--text2);
+  --ink-4: var(--text3);
+  --line: var(--border);
+  --accent: inherit;
+  --accent-hover: inherit;
+  --accent-soft: inherit;
+  --accent-softer: color-mix(in srgb, var(--accent) 16%, transparent);
+  --accent-border: color-mix(in srgb, var(--accent) 18%, transparent);
+  --accent-border-strong: color-mix(in srgb, var(--accent) 30%, transparent);
+  --accent-cloud: color-mix(in srgb, var(--accent) 14%, transparent);
+  --brand_standard: var(--accent);
+  --shadow: inherit;
+  --shadow-sm: inherit;
+  --shadow-lg: var(--shadow-hover);
+}
 .qqdash[data-theme="dark"] {
   --bg: inherit;
   --bg-elev: var(--bg2);
@@ -14,9 +35,6 @@
   --shadow: inherit;
   --shadow-sm: inherit;
   --shadow-lg: var(--shadow-hover);
-  --accent: #38b6ff;
-  --accent-hover: #58c3ff;
-  --accent-soft: rgba(0, 153, 255, .16);
   --text_primary: var(--ink);
   --text_secondary: var(--ink-3);
   --text_tertiary: var(--ink-4);
@@ -44,14 +62,14 @@
   --op-inset-shadow: var(--shadow-sm);
 }
 
-/* Keep the light ink used on filled action buttons legible against the blue. */
+/* Filled actions share the selected accent in night mode. */
 .qqdash[data-theme="dark"] .btn.primary:not(.danger),
 .qqdash[data-theme="dark"] .login-dialog-action.primary {
-  background: #0077c7;
+  background: var(--accent);
 }
 .qqdash[data-theme="dark"] .btn.primary:not(.danger):hover,
 .qqdash[data-theme="dark"] .login-dialog-action.primary:hover {
-  background: #006bb3;
+  background: var(--accent-hover);
 }
 .qqdash[data-theme="dark"] .btn.primary.outline:not(.danger) {
   background: transparent;
