@@ -1,9 +1,11 @@
 <script setup>
 import { ref, reactive, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import axios from '../../utils/axios'
+import { copyText as copyToClipboard } from '../../utils/clipboard'
 import { useThemeStore } from '../../stores/theme'
 import AppIcon from './AppIcon.vue'
 import OpenAPILoginDialog from './OpenAPILoginDialog.vue'
+import OperationsDashboard from './OperationsDashboard.vue'
 import QrCodeImage from './QrCodeImage.vue'
 import ReportLineChart from './ReportLineChart.vue'
 import './qqdash.css'
@@ -16,10 +18,10 @@ import FeatureImages from './FeatureImages.vue'
 import GroupAdminSettings from './GroupAdminSettings.vue'
 import NotifyCenter from './NotifyCenter.vue'
 
-
 const themeStore = useThemeStore()
 const UID = 'web_user'
 const HELPER_QR_URL = 'https://qq-ai.cdn-go.cn/web/neon/-/21fea1a6/q.qq.com_qqbot_dashboard/assets/qq-platform-assistant-qr.png'
+const BOT_LIST_ART = 'https://qq-ai.cdn-go.cn/web/neon/-/aacd6e8b/q.qq.com_qqbot_dashboard/assets/'
 const showHelperQR = ref(false)
 
 /* ── 鉴权状态 ── */
@@ -32,6 +34,9 @@ const status = reactive({
   subjectEmail: '',
   subjectType: 0,
   userType: 0,
+  userName: '',
+  userAvatar: '',
+  maskedUin: '',
 })
 const statusLoaded = ref(false)
 const toast = ref('')
@@ -58,8 +63,12 @@ async function loadStatus() {
   statusLoaded.value = true
 }
 
-/* ── 扫码登录 ── */
-const showQR = ref(false)
+/* ── 开放平台登录 ── */
+const showLogin = ref(false)
+const loginMethod = ref('qr')
+const mobileLoginUrl = ref('')
+const mobileLogin = computed(() => loginMethod.value === 'mobile')
+const loginId = ref('')
 const qrImg = ref('')
 const scanStatus = ref('preparing')
 const scanMessage = ref('')
@@ -80,25 +89,36 @@ const SCAN_TEXT = {
   not_started: '登录任务已失效，请刷新重试',
   logged_in: '登录成功！',
 }
-const scanText = computed(() => scanMessage.value || SCAN_TEXT[scanStatus.value] || '获取中...')
+const MOBILE_LOGIN_TEXT = {
+  waiting: '等待在手机 QQ 中确认',
+  scanned: '请在手机 QQ 中选择主体并确认',
+  expired: '授权链接已过期，请重新获取',
+}
+const scanText = computed(() => scanMessage.value || (mobileLogin.value && MOBILE_LOGIN_TEXT[scanStatus.value]) || SCAN_TEXT[scanStatus.value] || '获取中...')
 const scanEnded = computed(() => ['expired', 'rejected', 'failed', 'not_started'].includes(scanStatus.value))
+const activeMobileUrl = computed(() => ['waiting', 'scanned'].includes(scanStatus.value) ? mobileLoginUrl.value : '')
 const scanSteps = computed(() => [
   { label: '准备会话', active: scanStatus.value === 'preparing', done: scanStatus.value !== 'preparing' },
-  { label: '扫码确认', active: ['waiting', 'scanned', 'confirming'].includes(scanStatus.value), done: ['selecting', 'logged_in'].includes(scanStatus.value) },
-  { label: '选择主体', active: scanStatus.value === 'selecting', done: scanStatus.value === 'logged_in' },
+  { label: mobileLogin.value ? 'QQ 授权' : '扫码确认', active: ['waiting', 'scanned', 'confirming'].includes(scanStatus.value), done: ['selecting', 'logged_in'].includes(scanStatus.value) },
+  ...(mobileLogin.value ? [] : [{ label: '选择主体', active: scanStatus.value === 'selecting', done: scanStatus.value === 'logged_in' }]),
   { label: '完成登录', active: scanStatus.value === 'logged_in', done: false },
 ])
 const scanActions = computed(() => [
   ...(scanStatus.value === 'selecting' ? [{ key: 'select', label: scanLoading.value ? '登录中...' : '登录所选主体', primary: true, disabled: !selectedDeveloperId.value || scanLoading.value }] : []),
-  ...(scanEnded.value ? [{ key: 'refresh', label: '刷新二维码', primary: true }] : []),
+  ...(activeMobileUrl.value ? [{ key: 'copy', label: '复制授权链接' }] : []),
+  ...(scanEnded.value ? [{ key: 'refresh', label: mobileLogin.value ? '重新获取授权链接' : '刷新二维码', primary: true }] : []),
   { key: 'close', label: '关闭' },
 ])
 
 function stopScanPoll() { if (scanTimer) { clearInterval(scanTimer); scanTimer = null } }
 
-async function startScan() {
+async function startScan(method = 'qr') {
+  stopScanPoll()
   const requestId = ++scanRequestId
-  showQR.value = true
+  showLogin.value = true
+  loginMethod.value = method
+  loginId.value = ''
+  mobileLoginUrl.value = ''
   qrImg.value = ''
   scanStatus.value = 'preparing'
   scanMessage.value = ''
@@ -106,16 +126,19 @@ async function startScan() {
   selectedDeveloperId.value = ''
   scanLoading.value = true
   try {
-    const { data } = await axios.post('/api/openapi/v2/start-login', { user_id: UID })
+    const { data } = await axios.post('/api/openapi/v2/start-login', { user_id: UID, method })
     if (requestId !== scanRequestId) return
-    if (data.success && data.qr_image) {
-      qrImg.value = data.qr_image
+    const mobile = method === 'mobile'
+    if (data.success && (mobile ? data.login_url && data.login_id : data.qr_image)) {
+      loginId.value = data.login_id || ''
+      mobileLoginUrl.value = mobile ? data.login_url : ''
+      qrImg.value = mobile ? '' : data.qr_image
       scanStatus.value = 'waiting'
       scanMessage.value = ''
-      pollScan()
+      pollScan(requestId)
     } else {
       scanStatus.value = 'failed'
-      scanMessage.value = data.message || '获取二维码失败'
+      scanMessage.value = data.message || (mobile ? '获取手机 QQ 授权链接失败' : '获取二维码失败')
     }
   } catch (e) {
     if (requestId !== scanRequestId) return
@@ -126,13 +149,14 @@ async function startScan() {
 }
 
 let scanBusy = false
-async function applyScanResponse(data) {
+async function applyScanResponse(data, requestId) {
+  if (requestId !== scanRequestId) return
   const st = data.status || (data.success === false ? 'failed' : 'waiting')
   scanStatus.value = st
   scanMessage.value = ['expired', 'rejected', 'failed', 'not_started'].includes(st) ? (data.message || '') : ''
   if (st === 'logged_in') {
     stopScanPoll()
-    setTimeout(() => { showQR.value = false }, 800)
+    setTimeout(() => { if (requestId === scanRequestId) closeScan() }, 800)
     await loadStatus()
     if (status.ready) { pushToast('开放平台已授权'); loadBots() }
   } else if (st === 'selecting') {
@@ -146,33 +170,38 @@ async function applyScanResponse(data) {
   }
 }
 
-function pollScan() {
-  stopScanPoll()
+function pollScan(requestId) {
   scanTimer = setInterval(async () => {
     if (scanBusy) return
     scanBusy = true
     try {
-      const { data } = await axios.post('/api/openapi/v2/check-login', { user_id: UID })
-      await applyScanResponse(data)
+      const { data } = await axios.post('/api/openapi/v2/check-login', {
+        user_id: UID,
+        login_id: loginId.value || undefined,
+      })
+      await applyScanResponse(data, requestId)
     } catch (e) { /* ignore */ } finally { scanBusy = false }
   }, 2000)
 }
 
 async function selectDeveloper() {
   if (!selectedDeveloperId.value || scanLoading.value) return
+  const requestId = scanRequestId
   scanLoading.value = true
   scanStatus.value = 'confirming'
   try {
     const { data } = await axios.post('/api/openapi/v2/check-login', {
       user_id: UID,
+      login_id: loginId.value || undefined,
       developer_id: selectedDeveloperId.value,
     })
-    await applyScanResponse(data)
+    await applyScanResponse(data, requestId)
   } catch (e) {
+    if (requestId !== scanRequestId) return
     scanStatus.value = 'failed'
     scanMessage.value = '选择开发者主体失败，请刷新重试'
   }
-  scanLoading.value = false
+  if (requestId === scanRequestId) scanLoading.value = false
 }
 
 function subjectTypeText(type) {
@@ -193,16 +222,19 @@ function displaySubjectName(name) {
   return first ? `${first}*` : ''
 }
 
-function refreshScan() { stopScanPoll(); startScan() }
 function closeScan() {
   scanRequestId += 1
   stopScanPoll()
   scanLoading.value = false
-  showQR.value = false
+  showLogin.value = false
 }
-function handleScanAction(action) {
+async function handleScanAction(action) {
   if (action === 'select') selectDeveloper()
-  else if (action === 'refresh') refreshScan()
+  else if (action === 'refresh') startScan(loginMethod.value)
+  else if (action === 'copy') {
+    const copied = await copyToClipboard(activeMobileUrl.value)
+    pushToast(copied ? '授权链接已复制' : '复制失败，请长按「打开手机 QQ」复制链接')
+  }
   else closeScan()
 }
 
@@ -210,8 +242,7 @@ function handleScanAction(action) {
 async function v2(path, payload, method = 'POST', params) {
   const { data } = await axios.post('/api/openapi/v2/proxy', { user_id: UID, path, payload, method, params })
   if (data.relogin === true) {
-    stopScanPoll()
-    showQR.value = false
+    closeScan()
     status.loggedIn = false
     status.ready = false
     await loadStatus()
@@ -231,15 +262,22 @@ async function loadCurrentDeveloper() {
     const r = await v2('/bopen/v2/get_audit_developer_info', {})
     const info = r.audit_developer_info || r.data?.audit_developer_info || {}
     const developer = info.developer_info || {}
+    const user = info.user_profile || {}
     status.subjectName = developer.subject_name || ''
     status.subjectEmail = developer.subject_email || ''
     status.subjectType = developer.subject_type ?? 0
     status.userType = info.user_type ?? 0
+    status.userName = user.nick_name || ''
+    status.userAvatar = String(user.avatar_url || '').replace(/^http:\/\//i, 'https://')
+    status.maskedUin = user.mask_uin || ''
   } catch (e) {
     status.subjectName = ''
     status.subjectEmail = ''
     status.subjectType = 0
     status.userType = 0
+    status.userName = ''
+    status.userAvatar = ''
+    status.maskedUin = ''
   }
 }
 
@@ -248,12 +286,7 @@ const showDeveloperPicker = ref(false)
 const developersLoading = ref(false)
 const developerSwitching = ref(false)
 const selectedSwitchDeveloperId = ref('')
-const currentDeveloper = computed(() => developers.value.find(item => item.id === status.developerId) || {
-  id: status.developerId,
-  name: status.subjectName,
-  email: status.subjectEmail,
-  subjectType: status.subjectType,
-})
+const accountMenu = ref(null)
 
 function developerMark(developer) {
   return firstCharacter(developer.name || developer.email || '主体')
@@ -276,8 +309,24 @@ async function loadDevelopers() {
 }
 
 async function openDeveloperPicker() {
+  if (accountMenu.value) accountMenu.value.open = false
   showDeveloperPicker.value = true
   await loadDevelopers()
+}
+
+async function logoutPlatform() {
+  if (accountMenu.value) accountMenu.value.open = false
+  try {
+    const { data } = await axios.post('/api/openapi/logout', { user_id: UID })
+    if (!data.success) throw new Error(data.message || '退出登录失败')
+    closeScan()
+    closeCreate()
+    bots.value = []
+    developers.value = []
+    await loadStatus()
+  } catch (error) {
+    pushToast(error.message || '退出登录失败')
+  }
 }
 
 async function switchDeveloper() {
@@ -291,7 +340,7 @@ async function switchDeveloper() {
     if (data.success === false) throw new Error(data.message || '切换主体失败')
     status.developerId = data.developer_id || selectedSwitchDeveloperId.value
     await loadCurrentDeveloper()
-    view.value = 'list'
+    closeCreate()
     activeSec.value = 'account-info'
     officialAvatars.value = []
     createDraft.avatarId = ''
@@ -303,9 +352,10 @@ async function switchDeveloper() {
 }
 
 /* ── 视图路由 ── */
-const view = ref('list') // list | manage
+const view = ref('list')
 const activeSec = ref('account-info')
 const activeSub = ref('')
+const showNotifications = ref(false)
 const SECS = [
   { key: 'account-info', label: '账号信息' },
   { key: 'usage-scope', label: '服务范围' },
@@ -319,6 +369,7 @@ const bots = ref([])
 const createRemain = ref(0)
 const botsLoading = ref(false)
 const PALETTE = ['#5b8def', '#7c6cf0', '#f0794b', '#25b47e', '#e05a8c', '#3aa1d8']
+const botCountFormat = new Intl.NumberFormat('zh-CN')
 const isMember = computed(() => status.userType === 2)
 
 function botStatusText(bot) {
@@ -355,12 +406,18 @@ async function loadBots() {
       appid: b.bot_appid === undefined ? '' : String(b.bot_appid),
       name: b.bot_name || '',
       avatar: b.bot_avatar || '',
+      desc: b.bot_desc || '',
       uin: b.bot_uin === undefined ? '' : String(b.bot_uin),
       online: ((b.online_state && b.online_state.online_state) || 0) === 1,
       status: b.bot_status ?? 0,
       revoking: (b.bot_status ?? 0) === 2,
       finalDeleteTime: Number(b.final_delete_time || 0),
       color: PALETTE[i % PALETTE.length],
+      role: Number(b.user_type ?? status.userType),
+      serviceNames: (b.online_state?.links || []).map(link => link.service_name).filter(Boolean),
+      serviceConnected: Boolean(b.online_state?.links?.length),
+      existingGroups: b.statistics_data?.existing_groups ?? 0,
+      stockAddedFriends: b.statistics_data?.stock_added_friends ?? 0,
     }))
   } catch (e) { pushToast(e.message) }
   botsLoading.value = false
@@ -376,6 +433,7 @@ const cur = reactive({
   online: false,
   status: 0,
   revoking: false,
+  serviceConnected: false,
   finalDeleteTime: 0,
   color: '#5b8def',
 })
@@ -442,12 +500,6 @@ const privacyDialog = reactive({
   email: '',
   loading: false,
 })
-const revokeDialog = reactive({
-  visible: false,
-  input: '',
-  quick: false,
-  loading: false,
-})
 
 const botShareTarget = computed(() => {
   const params = new URLSearchParams({
@@ -472,13 +524,24 @@ const channelShareTarget = computed(() => {
 })
 
 function openBot(b) {
+  if (b.appid !== cur.appid) {
+    dev.secret = '****************'
+    dev.secretShown = false
+    secretResetDialog.value = false
+  }
   Object.assign(cur, b)
+  createdSecret.value = ''
+  showNotifications.value = false
   view.value = 'manage'
   activeSec.value = 'account-info'
   activeSub.value = ''
   loadSection()
 }
-function backToList() { view.value = 'list' }
+function backToList() {
+  createdSecret.value = ''
+  showNotifications.value = false
+  view.value = 'list'
+}
 
 const showBotSwitcher = ref(false)
 function switchBot(b) {
@@ -497,7 +560,7 @@ async function loadSection() {
   const k = activeSec.value
   if (k === 'account-info') await loadAccount()
   else if (k === 'usage-scope') await loadScope()
-  else if (k === 'data') await loadAllReports()
+  else if (k === 'data-details') await loadAllReports()
   else if (k === 'dev-settings') await loadDevSettings()
   else if (k === 'advanced') { await loadDevSettings(); await loadFeaturePreview() }
 }
@@ -518,6 +581,8 @@ async function loadAccount() {
     cur.avatar = baseInfo.avatar
     cur.uin = baseInfo.uin
     cur.online = bi.online_state?.online_state === 1
+    cur.serviceConnected = Boolean(bi.online_state?.links?.length)
+    cur.serviceNames = (bi.online_state?.links || []).map(link => link.service_name).filter(Boolean)
     cur.status = bi.bot_status ?? cur.status
     cur.revoking = cur.status === 2
     cur.desc = baseInfo.desc
@@ -684,8 +749,9 @@ async function submitBotEditor() {
 async function openAvatarEditor() {
   clearCustomAvatar()
   showAvatarPicker.value = true
+  const creating = view.value === 'create'
   if (!officialAvatars.value.length) await loadOfficialAvatars()
-  selectedAvatarId.value = officialAvatars.value.find(item => item.url === baseInfo.avatar)?.id
+  selectedAvatarId.value = (creating ? createDraft.avatarId : officialAvatars.value.find(item => item.url === baseInfo.avatar)?.id)
     || officialAvatars.value[0]?.id
     || ''
 }
@@ -820,13 +886,15 @@ function selectCustomAvatar(event) {
 
 async function submitAvatar() {
   if (!selectedAvatarId.value && !customAvatarFile.value) return
+  const creating = view.value === 'create'
   avatarSaving.value = true
   try {
     let avatarId = selectedAvatarId.value
     if (customAvatarFile.value) {
       const form = new FormData()
       form.append('user_id', UID)
-      form.append('bot_appid', cur.appid)
+      form.append('bot_appid', creating ? '0' : cur.appid)
+      form.append('type', creating ? '1' : '2')
       form.append('file', customAvatarFile.value)
       const response = await axios.post('/api/openapi/v2/upload-avatar', form)
       if (response.data?.success === false || !response.data?.upload_id) {
@@ -834,16 +902,25 @@ async function submitAvatar() {
       }
       avatarId = response.data.upload_id
     }
-    await v2('/cgi-bin/v2/info/modify', {
-      bot_appid: Number(cur.appid),
-      filter: { name: 0, avatar: 1, desc: 0 },
-      name: '',
-      avatar_id: avatarId,
-      desc: '',
-    })
-    closeAvatarEditor()
-    await loadAccount()
-    pushToast('头像已更新')
+    if (creating) {
+      clearCreateAvatarPreview()
+      createDraft.avatarId = avatarId
+      if (customAvatarFile.value) createAvatarPreview.value = URL.createObjectURL(customAvatarFile.value)
+      createDraft.avatarUrl = createAvatarPreview.value || officialAvatars.value.find(item => item.id === avatarId)?.url || ''
+      createDraft.avatarChanged = true
+      closeAvatarEditor()
+    } else {
+      await v2('/cgi-bin/v2/info/modify', {
+        bot_appid: Number(cur.appid),
+        filter: { name: 0, avatar: 1, desc: 0 },
+        name: '',
+        avatar_id: avatarId,
+        desc: '',
+      })
+      closeAvatarEditor()
+      await loadAccount()
+      pushToast('头像已更新')
+    }
   } catch (e) { pushToast(e.message) }
   avatarSaving.value = false
 }
@@ -872,42 +949,6 @@ async function updatePrivateProtocol() {
     await loadAccount()
   } catch (e) { pushToast(e.message) }
   privacyDialog.loading = false
-}
-
-async function openRevokeDialog() {
-  if (isMember.value) return
-  revokeDialog.input = ''
-  revokeDialog.loading = true
-  revokeDialog.visible = true
-  try {
-    const check = await v2('/cgi-bin/v2/info/delete', {
-      op: 3,
-      bot_appid: Number(cur.appid),
-    })
-    revokeDialog.quick = !!(check.is_quick_delete ?? check.data?.is_quick_delete)
-  } catch (e) {
-    revokeDialog.visible = false
-    pushToast(e.message)
-  }
-  revokeDialog.loading = false
-}
-
-async function revokeCurrentBot() {
-  if (isMember.value) return
-  if (revokeDialog.input.trim() !== cur.appid) return
-  revokeDialog.loading = true
-  try {
-    await v2('/cgi-bin/v2/info/delete', {
-      op: 1,
-      bot_appid: Number(cur.appid),
-      ...(revokeDialog.quick ? { is_quick_delete: true } : {}),
-    })
-    revokeDialog.visible = false
-    pushToast('已提交注销')
-    backToList()
-    await loadBots()
-  } catch (e) { pushToast(e.message) }
-  revokeDialog.loading = false
 }
 
 async function recoverBot(bot) {
@@ -944,6 +985,7 @@ const GROUP_PERMISSION_ITEMS = [
   { id: 104, label: '群黑名单管理', description: '管理群聊黑名单' },
   { id: 201, label: '发言管理', description: '禁言或解除禁言群成员' },
   { id: 202, label: '撤回消息', description: '撤回群成员发送的消息' },
+  { id: 203, label: '@全体成员', description: '在群聊中提醒全体成员' },
   { id: 102, label: '移除群成员', description: '将成员移出群聊' },
 ]
 const groupPicker = reactive({ visible: false, loading: false, purpose: 'admin', groups: [], saving: false })
@@ -971,9 +1013,9 @@ async function loadScope() {
       name: decodeNickname(item.nick_name),
     }))
     const whitelistRules = admin.whitelist_groups || []
-    scope.allGroupSwitches = groupSwitchMap(admin.switches?.length ? admin.switches : [101, 201, 202].map(switch_id => ({ switch_id, current_value: 1 })))
+    scope.allGroupSwitches = groupSwitchMap(admin.switches?.length ? admin.switches : [101, 201, 202, 203].map(switch_id => ({ switch_id, current_value: 1 })))
     const whiteSwitches = whitelistRules.flatMap(rule => Array.isArray(rule.switches) ? rule.switches : [])
-    scope.whitelistGroupSwitches = groupSwitchMap(whiteSwitches.length ? whiteSwitches : [101, 102, 201, 202].map(switch_id => ({ switch_id, current_value: 1 })))
+    scope.whitelistGroupSwitches = groupSwitchMap(whiteSwitches.length ? whiteSwitches : [101, 102, 201, 202, 203].map(switch_id => ({ switch_id, current_value: 1 })))
     scope.adminGroups = normalizeAdminGroups(whitelistRules, r.whitelist_groups_info || {})
     scope.loaded = true
   } catch (e) { pushToast(e.message) }
@@ -999,6 +1041,11 @@ function normalizeAdminGroups(rules, groupInfo) {
 
 async function toggleSearchable() {
   const searchable = !scope.searchable
+  if (searchable && privateProto.status !== 2) {
+    openPrivateProtocol()
+    pushToast('请先提交并通过隐私协议审核')
+    return
+  }
   try {
     await v2('/cgi-bin/v2/bot_scope_manager/dev_capability/modify', {
       bot_appid: Number(cur.appid),
@@ -1116,6 +1163,12 @@ async function removeAdminGroup(group) {
 async function toggleScope(which) {
   if (!isCertified.value) {
     pushToast('当前主体未认证，无法开启公开服务范围')
+    return
+  }
+  const currentlyEnabled = which === 'friend' ? scope.allowFriend : which === 'group' ? scope.allowGroup : scope.allowChannel
+  if (!currentlyEnabled && privateProto.status !== 2) {
+    openPrivateProtocol()
+    pushToast('请先提交并通过隐私协议审核')
     return
   }
   const payload = { bot_appid: Number(cur.appid), set_scope_filter: { set_friend_scope: 0, set_group_scope: 0, set_channel_scope: 0 } }
@@ -1299,26 +1352,35 @@ function reportPageRows(key) {
   const start = (reports[key].page - 1) * REPORT_PAGE_SIZE
   return reports[key].rows.slice(start, start + REPORT_PAGE_SIZE)
 }
-async function downloadReport(d) {
-  try {
-    const resp = await axios.post('/api/openapi/v2/proxy', {
-      user_id: UID, method: 'GET', path: '/cgi-bin/v2/datareport/export',
-      params: { bot_appid: Number(cur.appid), data_type: d.type, data_range: reports[d.key].range, scene_id: reports[d.key].sceneId },
-    }, { responseType: 'blob' })
-    let blob = resp.data
-    if ((resp.headers['content-type'] || blob.type || '').includes('application/json')) {
-      const result = JSON.parse(await blob.text())
-      if (result.retcode !== 0 || typeof result.data !== 'string') {
-        throw new Error(result.msg || '下载失败')
-      }
-      const content = result.data.startsWith('\uFEFF') ? result.data : `\uFEFF${result.data}`
-      blob = new Blob([content], { type: 'text/csv;charset=utf-8' })
+async function downloadPlatformReport(type, range, scene, title) {
+  const resp = await axios.post('/api/openapi/v2/proxy', {
+    user_id: UID, method: 'GET', path: '/cgi-bin/v2/datareport/export',
+    params: { bot_appid: Number(cur.appid), data_type: type, data_range: range, scene_id: scene },
+  }, { responseType: 'blob' })
+  let blob = resp.data
+  if ((resp.headers['content-type'] || blob.type || '').includes('application/json')) {
+    const result = JSON.parse(await blob.text())
+    if (result.retcode !== 0 || typeof result.data !== 'string') {
+      throw new Error(result.message || result.msg || '下载失败')
     }
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url; a.download = `${d.title}.csv`; a.click()
-    URL.revokeObjectURL(url)
-  } catch (e) { pushToast('下载失败') }
+    const content = result.data.startsWith('\uFEFF') ? result.data : `\uFEFF${result.data}`
+    blob = new Blob([content], { type: 'text/csv;charset=utf-8' })
+  }
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = `${title}.csv`
+  link.click()
+  setTimeout(() => URL.revokeObjectURL(url), 0)
+}
+
+async function downloadReport(report) {
+  const { range, sceneId } = reports[report.key]
+  try {
+    await downloadPlatformReport(report.type, range, sceneId, report.title)
+  } catch (error) {
+    pushToast(error.message || '下载失败')
+  }
 }
 
 /* ── 开发设置 ── */
@@ -1341,13 +1403,19 @@ const connectionDraft = reactive({
   webhook: '',
   saving: false,
 })
-const webhookEditor = reactive({ visible: false, value: '' })
 const eventsSaving = ref(false)
-function openWebhookEditor() { webhookEditor.value = connectionDraft.webhook; webhookEditor.visible = true }
-async function saveWebhookEditor() {
-  if (connectionDraft.saving) return
-  connectionDraft.webhook = webhookEditor.value
-  if (await saveConnection()) webhookEditor.visible = false
+const savedEvents = ref({ all: false, ids: [] })
+const connectionChanged = computed(() => connectionDraft.mode !== dev.mode || (connectionDraft.mode === 'Webhook' && connectionDraft.webhook.trim() !== dev.webhook))
+const eventsChanged = computed(() => dev.allSubscriptions !== savedEvents.value.all || JSON.stringify(dev.events.filter(event => event.selected).map(event => event.id).sort()) !== JSON.stringify(savedEvents.value.ids))
+function snapshotEvents() { savedEvents.value = { all: dev.allSubscriptions, ids: dev.events.filter(event => event.selected).map(event => event.id).sort() } }
+function resetEvents() {
+  dev.allSubscriptions = savedEvents.value.all
+  dev.events.forEach(event => { event.selected = savedEvents.value.ids.includes(event.id) })
+}
+function resetConnection() {
+  connectionDraft.mode = dev.mode
+  connectionDraft.webhook = dev.webhook
+  webhookCheck.msg = ''
 }
 const showAddTester = ref(false)
 const testerInput = ref('')
@@ -1380,6 +1448,7 @@ async function loadDevSettings() {
       selected: !!event.is_subscribed,
       weight: event.weight || 0,
     })).sort((a, b) => a.weight - b.weight)
+    snapshotEvents()
     const whitelistResult = await v2('/cgi-bin/v2/bot_scope_manager/scope_cfg/query', {
       bot_appid: Number(cur.appid),
       query_filter: { scope_config: 0, white_list: 1, search_config: 0 },
@@ -1387,6 +1456,7 @@ async function loadDevSettings() {
     scope.friendInfos = (whitelistResult.friend_infos || []).map(item => ({
       uin: item.uin === undefined ? '' : String(item.uin),
       name: decodeNickname(item.nick_name),
+      addedAt: item.create_time || item.add_time || 0,
     }))
     dev.loaded = true
     await checkBotHelper(false)
@@ -1518,6 +1588,7 @@ function openConnectionSettings() {
   connectionDraft.webhook = dev.webhook
   webhookCheck.ok = null
   webhookCheck.msg = ''
+  resetEvents()
   activeSub.value = 'event-callback'
   loadWebhookSuggest()
 }
@@ -1542,13 +1613,13 @@ function fillSuggestedWebhook() {
 }
 
 function isValidWebhookUrl(url) {
-  return /^https?:\/\//i.test(url)
+  try { const parsed = new URL(url); return parsed.protocol === 'https:' && !!parsed.hostname } catch { return false }
 }
 
 async function checkWebhookUrl(value = connectionDraft.webhook) {
   const url = value.trim()
   if (!isValidWebhookUrl(url)) {
-    pushToast('回调地址必须以 http:// 或 https:// 开头')
+    pushToast('请输入有效的 HTTPS 回调地址')
     return
   }
   webhookCheck.checking = true
@@ -1566,10 +1637,11 @@ async function checkWebhookUrl(value = connectionDraft.webhook) {
 }
 
 async function saveConnection() {
-  if (connectionDraft.saving) return false
+  if (connectionDraft.saving || eventsSaving.value || !connectionChanged.value) return false
   if (connectionDraft.mode === 'Webhook') {
     if (!isValidWebhookUrl(connectionDraft.webhook.trim())) {
-      pushToast('回调地址必须以 http:// 或 https:// 开头')
+      webhookCheck.msg = '请输入有效的 HTTPS 回调地址'
+      webhookCheck.ok = false
       return false
     }
     connectionDraft.saving = true
@@ -1581,9 +1653,10 @@ async function saveConnection() {
       })
       dev.webhook = connectionDraft.webhook.trim()
       dev.mode = 'Webhook'
-      pushToast('已切换为 Webhook')
+      webhookCheck.msg = ''
+      pushToast('Webhook 接入配置已保存')
       return true
-    } catch (e) { pushToast(e.message); return false }
+    } catch (e) { webhookCheck.ok = false; webhookCheck.msg = e.message; pushToast(e.message); return false }
     finally { connectionDraft.saving = false }
   }
   connectionDraft.saving = true
@@ -1600,9 +1673,9 @@ async function saveConnection() {
 }
 
 async function saveEvents() {
-  if (eventsSaving.value || connectionDraft.saving) return
+  if (eventsSaving.value || connectionDraft.saving || connectionChanged.value || dev.mode !== 'Webhook' || !eventsChanged.value) return
   if (connectionDraft.mode === 'Webhook' && !isValidWebhookUrl(connectionDraft.webhook.trim())) {
-    pushToast('请先设置有效的 HTTP/HTTPS 回调地址')
+    pushToast('请先保存有效的 HTTPS 回调地址')
     return
   }
   eventsSaving.value = true
@@ -1620,6 +1693,7 @@ async function saveEvents() {
     })
     dev.mode = connectionDraft.mode
     dev.webhook = connectionDraft.webhook.trim()
+    snapshotEvents()
     pushToast(dev.allSubscriptions ? '已设置接收全部事件' : `接收事件配置已保存（共 ${dev.events.filter(event => event.selected).length} 个）`)
   } catch (e) { pushToast(e.message) }
   finally { eventsSaving.value = false }
@@ -1668,8 +1742,10 @@ function openAIServiceSettings() { activeSub.value = 'switch-service' }
 
 async function resetSecret() {
   if (isMember.value) return
+  const appid = cur.appid
   try {
-    const r = await v2('/cgi-bin/v2/bot_dev_setting/secret/reset', { bot_appid: Number(cur.appid) })
+    const r = await v2('/cgi-bin/v2/bot_dev_setting/secret/reset', { bot_appid: Number(appid) })
+    if (appid !== cur.appid || !['manage', 'create-connect'].includes(view.value)) return
     dev.secret = r.secret || r.app_secret || '重置成功, 请在弹窗查看'
     dev.secretShown = true
     secretResetDialog.value = false
@@ -1678,10 +1754,30 @@ async function resetSecret() {
 }
 
 /* ── 创建机器人 ── */
-const showCreate = ref(false)
 const createLoading = ref(false)
+const checkingCreatedConnection = ref(false)
+const showDiscardCreate = ref(false)
 const officialAvatars = ref([])
-const createDraft = reactive({ name: '', desc: '', avatarId: '' })
+const createAvatarPreview = ref('')
+const createdSecret = ref('')
+const createDraft = reactive({ name: '', desc: '', avatarId: '', avatarUrl: '', avatarChanged: false })
+
+function clearCreateAvatarPreview() {
+  if (createAvatarPreview.value) URL.revokeObjectURL(createAvatarPreview.value)
+  createAvatarPreview.value = ''
+}
+
+function closeCreate() {
+  showDiscardCreate.value = false
+  clearCreateAvatarPreview()
+  backToList()
+}
+
+function cancelCreate() {
+  if (createLoading.value) return
+  if (createDraft.name || createDraft.desc || createDraft.avatarChanged) showDiscardCreate.value = true
+  else closeCreate()
+}
 
 async function loadOfficialAvatars() {
   if (officialAvatars.value.length) return
@@ -1691,7 +1787,6 @@ async function loadOfficialAvatars() {
       id: item.avatar_id || '',
       url: item.avatar_url || '',
     })).filter(item => item.id && item.url)
-    createDraft.avatarId ||= officialAvatars.value[0]?.id || ''
   } catch (e) { pushToast(e.message) }
 }
 
@@ -1704,8 +1799,14 @@ async function openCreate() {
     pushToast('当前主体机器人数量已达上限')
     return
   }
-  showCreate.value = true
+  clearCreateAvatarPreview()
+  Object.assign(createDraft, { name: '', desc: '', avatarId: '', avatarUrl: '', avatarChanged: false })
+  view.value = 'create'
   await loadOfficialAvatars()
+  if (view.value === 'create' && !createDraft.avatarId && officialAvatars.value.length) {
+    const avatar = officialAvatars.value[Math.floor(Math.random() * officialAvatars.value.length)]
+    Object.assign(createDraft, { avatarId: avatar.id, avatarUrl: avatar.url })
+  }
 }
 
 async function submitCreate() {
@@ -1721,12 +1822,12 @@ async function submitCreate() {
     const createId = result.create_id || ''
     const interval = Math.max(Number(result.poll_interval_ms || 1000), 500)
     const maxTimes = Math.max(Number(result.poll_max_times || 10), 1)
-    let created = false
+    let created = null
     for (let i = 0; i < maxTimes; i += 1) {
       await new Promise(resolve => setTimeout(resolve, interval))
       const query = await v2('/cgi-bin/v2/bot/create/query_result', { create_id: createId })
       if (query.ret_code === 3) {
-        created = true
+        created = query
         break
       }
       if ([0, 2].includes(query.ret_code)) {
@@ -1734,12 +1835,51 @@ async function submitCreate() {
       }
     }
     if (!created) throw new Error('创建机器人超时，请稍后刷新查看')
-    showCreate.value = false
-    Object.assign(createDraft, { name: '', desc: '', avatarId: officialAvatars.value[0]?.id || '' })
     pushToast('机器人创建成功')
     await loadBots()
+    const appid = String(created.bot_appid || '')
+    const bot = bots.value.find(item => item.appid === appid)
+    if (appid && status.ready) {
+      Object.assign(cur, bot || {
+        appid, name: createDraft.name.trim(), avatar: createAvatarPreview.value ? '' : createDraft.avatarUrl,
+        desc: createDraft.desc.trim(), uin: '', online: false, status: 1, revoking: false, serviceConnected: false,
+        finalDeleteTime: 0, color: PALETTE[0],
+      })
+      createdSecret.value = created.bot_secret || ''
+      dev.secret = '****************'
+      dev.secretShown = false
+      view.value = 'create-connect'
+    } else backToList()
+    clearCreateAvatarPreview()
   } catch (e) { pushToast(e.message) }
   createLoading.value = false
+}
+
+function skipCreatedConnection() {
+  backToList()
+  pushToast('机器人已创建，可稍后在管理页连接服务')
+}
+
+async function checkCreatedConnection() {
+  if (checkingCreatedConnection.value) return
+  const appid = cur.appid
+  checkingCreatedConnection.value = true
+  try {
+    const result = await v2('/cgi-bin/v2/info/query', { bot_appid: Number(appid), filter: { base_info: 1, online_state: 1 } })
+    if (view.value !== 'create-connect' || appid !== cur.appid) return
+    cur.serviceConnected = Boolean((result.base_info?.online_state || result.online_state)?.links?.length)
+    if (!cur.serviceConnected) {
+      pushToast('暂未检测到连接，请在手机 QQ 完成授权后重试')
+      return
+    }
+    backToList()
+    pushToast('机器人已连接')
+    await loadBots()
+  } catch (error) {
+    pushToast(error.message || '无法查询连接状态，请重试')
+  } finally {
+    checkingCreatedConnection.value = false
+  }
 }
 
 function copyText(t) {
@@ -1752,16 +1892,17 @@ onMounted(async () => {
   if (status.ready) loadBots()
 })
 onUnmounted(() => {
-  stopScanPoll()
+  closeScan()
   closeCropper()
   clearCustomAvatar()
+  clearCreateAvatarPreview()
 })
 defineExpose({ reload: loadStatus })
 </script>
 
 <template>
   <div class="qqdash" :data-theme="themeStore.darkMode ? 'dark' : 'light'">
-    <div class="app-shell">
+    <div :class="['app-shell', { 'platform-content': status.ready }]">
       <!-- 主区 -->
       <main class="main">
         <!-- 状态加载中 -->
@@ -1782,11 +1923,11 @@ defineExpose({ reload: loadStatus })
             <div class="v2-login-overview">
               <div class="v2-login-step">
                 <span class="v2-login-step-num">1</span>
-                <div><b>创建安全会话</b><span>由 Elaina 启动一次性扫码登录流程</span></div>
+                <div><b>创建登录会话</b><span>由 Elaina 生成一次性授权入口</span></div>
               </div>
               <div class="v2-login-step">
                 <span class="v2-login-step-num">2</span>
-                <div><b>使用 QQ 扫码确认</b><span>如有多个主体，可在扫码后选择登录主体</span></div>
+                <div><b>在 QQ 中确认</b><span>通过扫码或授权链接登录，并选择开发者主体</span></div>
               </div>
               <div class="v2-login-step">
                 <span class="v2-login-step-num">3</span>
@@ -1794,9 +1935,13 @@ defineExpose({ reload: loadStatus })
               </div>
             </div>
             <div class="v2-gate-actions">
-              <button class="btn primary large" :disabled="scanLoading" @click="startScan">
+              <button class="btn primary large" :disabled="scanLoading" @click="startScan()">
                 <AppIcon name="qr" :size="17" />
-                {{ scanLoading ? '正在准备...' : '使用 QQ 扫码登录' }}
+                使用 QQ 扫码登录
+              </button>
+              <button class="btn primary outline large" :disabled="scanLoading" @click="startScan('mobile')">
+                <AppIcon name="external" :size="17" />
+                在手机 QQ 中授权
               </button>
             </div>
           </div>
@@ -1804,31 +1949,43 @@ defineExpose({ reload: loadStatus })
 
         <!-- 机器人列表 -->
         <div v-else-if="view === 'list'" class="page page-bots">
-          <div class="page-head">
+          <div class="page-head bots-page-head">
             <div>
-              <div class="current-subject-card" :data-auth-type="status.subjectType === 2 ? 'enterprise' : status.subjectType === 1 ? 'personal' : 'unverified'">
-                <span class="current-subject-mark">{{ developerMark(currentDeveloper) }}</span>
-                <span class="current-subject-text">
-                  <strong>{{ displaySubjectName(status.subjectName) || '未认证主体' }}</strong>
-                  <small>{{ status.subjectEmail || '暂无主体邮箱' }}</small>
+              <h1 class="page-title">我的机器人</h1>
+              <div class="platform-list-meta">
+                <p class="page-sub">管理当前开发者主体下关联的 QQ 机器人账号</p>
+                <span v-if="!botsLoading" class="limit-hint" :class="{ warn: isMember || createRemain <= 0 }">
+                  <span class="dot-g" :class="{ warn: isMember || createRemain <= 0 }"></span>
+                  <template v-if="isMember">当前为成员身份，无法创建机器人</template>
+                  <template v-else-if="createRemain <= 0">可创建的机器人已达上限</template>
+                  <template v-else>还可创建 <b>{{ createRemain }}</b> 个机器人</template>
                 </span>
-                <span class="current-subject-tag">{{ subjectTypeText(status.subjectType) }}</span>
               </div>
             </div>
             <div class="page-actions">
-              <button class="btn ghost subject-switch-button" type="button" @click="openDeveloperPicker">
-                <AppIcon name="group" :size="15" />
-                切换主体
-              </button>
-              <button class="btn primary" :disabled="isMember || createRemain <= 0" @click="openCreate"><AppIcon name="plus" :size="15" /> 创建机器人</button>
+              <details ref="accountMenu" class="platform-account" @keydown.esc="accountMenu.open = false">
+                <summary class="btn" aria-label="打开用户菜单">
+                  <img v-if="status.userAvatar" :src="status.userAvatar" alt="" />
+                  <AppIcon v-else name="user" :size="16" />
+                  <span>{{ displaySubjectName(status.subjectName) || '未认证主体' }}</span>
+                  <AppIcon name="chevron" :size="13" />
+                </summary>
+                <div class="platform-account-menu">
+                  <div class="platform-account-info">
+                    <b>{{ status.userName || 'QQ 账号' }}</b>
+                    <small v-if="status.maskedUin">QQ 号 {{ status.maskedUin }}</small>
+                    <small v-if="status.subjectEmail">{{ status.subjectEmail }}</small>
+                  </div>
+                  <button class="btn ghost" type="button" @click="openDeveloperPicker">切换主体</button>
+                  <button class="btn ghost" type="button" @click="logoutPlatform">退出登录</button>
+                </div>
+              </details>
+              <button type="button" class="btn primary" :disabled="isMember || createRemain <= 0" @click="openCreate"><AppIcon name="plus" :size="15" /> 创建机器人</button>
             </div>
-          </div>
-          <div v-if="isMember || createRemain <= 0" class="bots-meta">
-            {{ isMember ? '你不是主体账号的管理员，无法创建机器人' : '可创建的机器人已达上限' }}
           </div>
           <div v-if="botsLoading" class="empty-hint">加载中...</div>
           <div v-else class="bots-grid">
-            <div v-for="b in bots" :key="b.appid" :class="['bot-card', { 'revoke-card': b.revoking }]" @click="openBotCard(b)">
+            <article v-for="b in bots" :key="b.appid" :class="['bot-card', { 'revoke-card': b.revoking, 'banned-card': b.status === 4 }]" @click="openBotCard(b)">
               <div class="bot-head">
                 <div class="bot-avatar" :style="{ background: b.avatar ? 'transparent' : b.color }">
                   <img v-if="b.avatar" :src="b.avatar" alt="" />
@@ -1837,31 +1994,94 @@ defineExpose({ reload: loadStatus })
                 <div class="bot-info">
                   <div class="bot-name-row">
                     <span class="bot-name">{{ b.name }}</span>
-                    <span :class="['bot-role-tag', isMember ? 'role-member' : 'role-admin']">
-                      <AppIcon :name="isMember ? 'group' : 'safe'" :size="12" class="role-icon" />
-                      <span class="role-text">{{ isMember ? '成员' : '管理员' }}</span>
+                    <span v-if="[1, 2].includes(b.role)" :class="['bot-role-tag', b.role === 2 ? 'role-member' : 'role-admin']">
+                      <AppIcon :name="b.role === 2 ? 'group' : 'safe'" :size="12" class="role-icon" />
+                      <span class="role-text">{{ b.role === 2 ? '成员' : '管理员' }}</span>
                     </span>
                   </div>
                   <div class="bot-status">
                     <span class="status-dot" :class="{ offline: !b.online && !b.revoking && b.status !== 4, revoking: b.revoking || b.status === 4 }"></span>
                     <span :class="{ dangerText: b.revoking || b.status === 4 }">{{ botStatusText(b) }}</span>
+                    <span v-if="b.online && !b.revoking && b.serviceNames.length" class="bot-service-names">
+                      · {{ b.serviceNames.slice(0, 3).join('、') }}{{ b.serviceNames.length > 3 ? '…' : '' }}
+                    </span>
                   </div>
                 </div>
-                <span v-if="!b.revoking && b.status !== 4" class="bot-action"><AppIcon name="chevron" :size="18" /></span>
+                <button v-if="!b.revoking && b.status !== 4" type="button" class="bot-action" :aria-label="`管理 ${b.name}`"><AppIcon name="chevron" :size="18" /></button>
               </div>
               <div v-if="b.revoking" class="bot-card-foot">
                 <span>将于 <b>{{ formatDeleteDate(b.finalDeleteTime) }}</b> 永久删除</span>
                 <button v-if="!isMember" class="btn ghost sm" @click.stop="recoverBot(b)">撤回注销</button>
               </div>
-            </div>
-            <div v-if="!bots.length" class="empty-state">
+              <div v-else-if="b.status === 1" class="platform-bot-stats">
+                <span><AppIcon name="group" :size="13" />累计进群 <b>{{ botCountFormat.format(b.existingGroups) }}</b></span>
+                <span><AppIcon name="user" :size="13" />累计用户 <b>{{ botCountFormat.format(b.stockAddedFriends) }}</b></span>
+              </div>
+            </article>
+            <div v-if="!bots.length" class="empty-state platform-empty">
+              <img class="platform-empty-hero" :src="`${BOT_LIST_ART}empty-hero-shot.png`" alt="" />
               <div class="empty-copy">
                 <h2 class="empty-title">创建你的 QQ 机器人</h2>
                 <p class="empty-desc">个性化创建，灵活使用管理</p>
               </div>
+              <img class="platform-empty-features" :src="`${BOT_LIST_ART}empty-intro-cards-shot.png`" alt="机器人能力介绍" loading="lazy" />
             </div>
           </div>
         </div>
+
+        <section v-else-if="view === 'create'" class="page platform-create">
+          <div class="platform-create-shell">
+            <button type="button" class="btn ghost platform-create-back" :disabled="createLoading" @click="cancelCreate"><AppIcon name="back" :size="16" />返回机器人列表</button>
+            <header class="platform-create-heading">
+              <h1>创建机器人账号</h1>
+              <p>填写基本信息，创建后即可连接服务。头像、昵称和简介可随时修改。</p>
+            </header>
+            <form class="platform-create-form" @submit.prevent="submitCreate">
+              <div class="platform-create-avatar">
+                <img v-if="createDraft.avatarUrl" :src="createDraft.avatarUrl" alt="机器人头像" />
+                <span v-else><AppIcon name="user" :size="32" /></span>
+                <div><h2>机器人头像</h2><p>选择官方头像，或上传自定义图片</p><button type="button" class="btn small" :disabled="createLoading" @click="openAvatarEditor">更换头像</button></div>
+              </div>
+              <label class="platform-create-field">
+                <span>机器人昵称 <em>*</em></span>
+                <div class="platform-create-input"><input v-model="createDraft.name" required maxlength="20" :disabled="createLoading" placeholder="为机器人起一个名字" /><small>{{ createDraft.name.length }} / 20</small></div>
+                <small>昵称将公开展示于 QQ 内。</small>
+              </label>
+              <label class="platform-create-field">
+                <span>机器人简介 <small>（选填）</small></span>
+                <div class="platform-create-input is-textarea"><textarea v-model="createDraft.desc" maxlength="100" rows="3" :disabled="createLoading" placeholder="介绍机器人能做什么，例如查询天气或提醒日程"></textarea><small>{{ createDraft.desc.length }} / 100</small></div>
+              </label>
+              <footer class="platform-create-footer">
+                <p>请勿使用侵权、违法或不当信息。</p>
+                <div><button type="button" class="btn" :disabled="createLoading" @click="cancelCreate">取消</button><button type="submit" class="btn primary" :disabled="createLoading || !createDraft.name.trim() || !createDraft.avatarId">{{ createLoading ? '创建中…' : '创建机器人' }}</button></div>
+              </footer>
+            </form>
+          </div>
+        </section>
+
+        <section v-else-if="view === 'create-connect'" class="page platform-connect">
+          <header class="page-head platform-connect-head">
+            <div class="page-head-main">
+              <h1 class="page-title">设置 AI 服务</h1>
+              <div class="platform-connect-bot">
+                <img v-if="cur.avatar" :src="cur.avatar" alt="" />
+                <span v-else class="platform-connect-avatar"><AppIcon name="robot" :size="20" /></span>
+                <div><b>{{ cur.name }}</b><small>AppID {{ cur.appid }}</small></div>
+                <button type="button" class="btn ghost small" aria-label="复制 AppID" @click="copyText(cur.appid)"><AppIcon name="copy" :size="15" /></button>
+                <span class="manage-status-pill" :data-state="cur.serviceConnected ? 'online' : 'offline'">{{ cur.serviceConnected ? '已连接' : '未连接' }}</span>
+              </div>
+              <div class="platform-connect-description">
+                <p class="page-sub">连接已有 AI 服务后，即可通过机器人使用该服务。自行开发机器人可以跳过这一步。</p>
+                <div class="page-actions">
+                  <button type="button" class="btn primary outline small" :disabled="checkingCreatedConnection" @click="skipCreatedConnection">稍后连接</button>
+                  <button type="button" class="btn primary small" :disabled="checkingCreatedConnection" @click="checkCreatedConnection">{{ checkingCreatedConnection ? '检查中…' : '我已连接' }}</button>
+                </div>
+              </div>
+            </div>
+          </header>
+          <ServiceGuide :appid="cur.appid" :secret="dev.secretShown ? dev.secret : createdSecret" :show-breadcrumb="false"
+            @reset-secret="secretResetDialog = true" @toast="pushToast" />
+        </section>
 
         <!-- 管理页 -->
         <div v-else class="page page-manage">
@@ -1890,15 +2110,31 @@ defineExpose({ reload: loadStatus })
                 </div>
               </div>
             </div>
-            <div class="page-actions"><button class="notify-entry" aria-label="通知中心" @click="selectSec('notifications')"><AppIcon name="bell" :size="16" />通知中心</button></div>
+            <div class="page-actions platform-notify-anchor">
+              <button type="button" class="notify-entry" aria-label="通知中心" :aria-expanded="showNotifications" @click="showNotifications = !showNotifications"><AppIcon name="bell" :size="16" />通知中心</button>
+              <template v-if="showNotifications">
+                <button type="button" class="platform-notify-dismiss" aria-label="关闭通知中心" @click="showNotifications = false"></button>
+                <div class="platform-notify-popover" role="dialog" aria-label="通知中心" @keydown.esc="showNotifications = false">
+                  <NotifyCenter :developer-id="status.developerId" :request="v2" @toast="pushToast" />
+                </div>
+              </template>
+            </div>
           </div>
 
-          <div class="manage-layout">
-            <nav class="manage-nav">
-              <button v-for="s in SECS" :key="s.key" type="button" class="mn-item" :class="{ active: activeSec === s.key }" @click="selectSec(s.key)">{{ s.label }}</button>
+          <div class="manage-layout" :aria-busy="detailLoading">
+            <nav class="manage-nav" aria-label="机器人管理栏目">
+              <template v-if="detailLoading">
+                <span v-for="s in SECS" :key="s.key" class="mn-skeleton" aria-hidden="true"></span>
+              </template>
+              <template v-else>
+                <button v-for="s in SECS" :key="s.key" type="button" class="mn-item"
+                  :aria-current="activeSec === s.key || (s.key === 'data' && activeSec === 'data-details') ? 'page' : undefined"
+                  :class="{ active: activeSec === s.key || (s.key === 'data' && activeSec === 'data-details') }"
+                  @click="selectSec(s.key)">{{ s.label }}</button>
+              </template>
             </nav>
             <div class="manage-body">
-              <div v-if="detailLoading" class="empty-hint">加载中...</div>
+              <div v-if="detailLoading" class="mn-body-skeleton" role="status" aria-label="加载机器人详情"></div>
 
               <!-- 账号信息 -->
               <template v-else-if="activeSec === 'account-info'">
@@ -1913,7 +2149,6 @@ defineExpose({ reload: loadStatus })
                   <div class="row static"><div class="row-main"><div class="row-label">管理员</div><div class="row-sub">该机器人的管理员 QQ 账号，拥有该机器人全部管理权限</div></div><div class="admin-value"><div class="admin-value-name">{{ developerInfo.adminNickName || 'QQ 管理员' }}</div><div class="admin-value-qq">QQ号：{{ developerInfo.adminUin || '—' }}</div></div></div>
                   <div class="row" @click="showAssistantManager = true"><div class="row-main"><div class="row-label">协助者成员</div><div class="row-sub">添加或移除可协助管理该机器人的成员</div></div><div class="avatar-stack"><span v-for="member in assistantMembers.slice(0, 5)" :key="member.uin" class="avatar-stack-item"><img v-if="member.avatar" :src="member.avatar" alt="" /><span v-else>{{ firstCharacter(member.name) }}</span></span></div><AppIcon name="chevron" :size="16" class="row-chev" /></div>
                 </div>
-                <div class="danger-actions-grid"><button v-if="!isMember" class="danger-action remove" type="button" @click="openRevokeDialog">注销机器人</button></div>
               </template>
 
               <!-- 服务范围 -->
@@ -2026,7 +2261,14 @@ defineExpose({ reload: loadStatus })
               </template>
 
               <!-- 运营数据 -->
-              <template v-else-if="activeSec === 'data'">
+              <OperationsDashboard v-else-if="activeSec === 'data'" :appid="cur.appid" :request="v2" :download="downloadPlatformReport"
+                @details="selectSec('data-details')" @error="pushToast" />
+
+              <template v-else-if="activeSec === 'data-details'">
+                <div class="data-details-toolbar">
+                  <button class="btn small" type="button" @click="selectSec('data')"><AppIcon name="back" :size="14" />返回运营数据</button>
+                  <h2>数据明细</h2>
+                </div>
                 <div class="sec-group report-view-setting">
                   <div class="row static">
                     <div class="row-main">
@@ -2101,11 +2343,6 @@ defineExpose({ reload: loadStatus })
                     </div>
                   </Transition>
                 </div>
-              </template>
-
-              <!-- 平台通知 -->
-              <template v-else-if="activeSec === 'notifications'">
-                <NotifyCenter :developer-id="status.developerId" :request="v2" @toast="pushToast" />
               </template>
 
               <!-- 高级设置 -->
@@ -2222,8 +2459,8 @@ defineExpose({ reload: loadStatus })
                       <button :class="['ec-channel-card', { active: connectionDraft.mode === 'Webhook' }]" type="button" :disabled="connectionDraft.saving || eventsSaving" @click="connectionDraft.mode = 'Webhook'"><span class="ec-channel-icon"><AppIcon name="cloud" :size="22" /></span><span class="ec-channel-text"><b class="ec-channel-title">Webhook</b><small class="ec-channel-desc">事件推送至你配置的 HTTP/HTTPS 服务上，适合提供公开服务的机器人使用，运维更可靠</small></span><span class="ec-channel-check">✓</span></button>
                     </div>
                     <div v-if="connectionDraft.mode === 'WebSocket'" class="ec-tip-block"><AppIcon name="info" :size="14" /><span>如果你是想用于连接 OpenClaw 等类似的 AI Agent 服务，在 AI 服务提供方没有明确说明和指引的前提下，选用 WebSocket 即可。</span></div>
-                    <div v-else class="ec-channel-extra"><div class="ec-field-card"><div class="ec-field-label">回调地址（HTTP/HTTPS 地址）</div><div class="ec-field-value-row"><code class="ec-field-mono ec-editable" role="button" tabindex="0" @click="openWebhookEditor" @keydown.enter="openWebhookEditor">{{ connectionDraft.webhook || '设置回调地址并切换至 Webhook 接入' }}</code><button class="ec-icon-btn" aria-label="修改回调地址" @click="openWebhookEditor"><AppIcon name="edit" :size="14" /></button><button class="ec-icon-btn" aria-label="复制回调地址" @click="copyText(connectionDraft.webhook)"><AppIcon name="copy" :size="14" /></button></div><div class="ec-field-tip">回调地址需公开可访问，修改地址时平台会校验返回签名，可查阅开发者文档了解签名算法</div></div></div>
-                    <div v-if="connectionDraft.mode !== dev.mode" class="ec-channel-foot"><button class="btn primary" type="button" :disabled="connectionDraft.saving || eventsSaving" @click="saveConnection">{{ connectionDraft.saving ? '保存中…' : `切换为 ${connectionDraft.mode}` }}</button></div>
+                    <div v-else class="ec-channel-extra"><label class="ec-field-card"><div class="ec-field-label">回调地址（HTTPS 地址）</div><div class="ec-field-value-row"><input v-model="connectionDraft.webhook" class="ec-field-mono ec-editable" aria-label="回调地址" placeholder="https://your-domain.com/qq/callback" /><button class="ec-icon-btn" type="button" aria-label="复制回调地址" :disabled="!connectionDraft.webhook" @click="copyText(connectionDraft.webhook)"><AppIcon name="copy" :size="14" /></button></div><div class="ec-field-tip">回调地址需公开可访问，保存时平台会校验返回签名。</div><p v-if="webhookCheck.msg" :class="['webhook-check-msg', webhookCheck.ok ? 'ok' : 'fail']">{{ webhookCheck.msg }}</p></label></div>
+                    <div v-if="connectionChanged" class="ec-channel-foot"><button class="btn" type="button" :disabled="connectionDraft.saving || eventsSaving" @click="resetConnection">撤销修改</button><button class="btn primary" type="button" :disabled="connectionDraft.saving || eventsSaving" @click="saveConnection">{{ connectionDraft.saving ? '保存中…' : '保存' }}</button></div>
                   </div>
                   <div v-if="connectionDraft.mode === 'Webhook'" class="sec-group">
                     <div class="sec-group-head"><div class="sec-group-title">接收事件配置</div></div>
@@ -2234,7 +2471,7 @@ defineExpose({ reload: loadStatus })
                       <div v-if="eventGroups.length" class="ec-events-tabs"><section v-for="group in eventGroups" :key="group.name" class="ec-event-section"><div class="ec-event-section-title">{{ group.name }}</div><div class="ec-event-list"><label v-for="event in group.items" :key="event.id" class="ec-event-item"><input v-model="event.selected" type="checkbox" :disabled="eventsSaving" /><span class="ec-event-text"><b class="ec-event-name">{{ event.name }}</b><small class="ec-event-desc">{{ event.description }}</small></span><code class="ec-event-key">{{ event.id }}</code></label></div></section></div>
                       <div v-else class="ec-events-empty">暂无可订阅事件</div>
                     </template>
-                    <div class="ec-events-foot"><button class="btn primary" type="button" :disabled="eventsSaving || connectionDraft.saving" @click="saveEvents">{{ eventsSaving ? '保存中…' : '保存接收事件' }}</button></div>
+                    <div v-if="eventsChanged" class="ec-events-foot"><button class="btn" type="button" :disabled="eventsSaving || connectionDraft.saving" @click="resetEvents">撤销修改</button><button class="btn primary" type="button" :disabled="eventsSaving || connectionDraft.saving || dev.mode !== 'Webhook'" @click="saveEvents">{{ eventsSaving ? '保存中…' : '保存' }}</button></div>
                   </div>
                 </template>
               </template>
@@ -2245,7 +2482,6 @@ defineExpose({ reload: loadStatus })
     </div>
 
     <FeatureImages v-if="showFeatureImages" :appid="cur.appid" :info="featurePreview" :request="v2" @close="showFeatureImages = false" @saved="loadFeaturePreview" @toast="pushToast" />
-    <div v-if="webhookEditor.visible" class="v2-qr-overlay" @click.self="!connectionDraft.saving && (webhookEditor.visible = false)"><form class="form-modal" role="dialog" aria-modal="true" aria-label="设置回调地址" @submit.prevent="saveWebhookEditor"><h3>设置回调地址</h3><p class="modal-desc">需使用公网可访问的 HTTP/HTTPS 地址</p><label class="create-field"><span>回调地址</span><input v-model="webhookEditor.value" type="url" required placeholder="http://your-domain.com/qq/callback" /></label><div class="webhook-editor-tools"><button v-if="webhookSuggest.available" class="btn ghost sm" type="button" @click="webhookEditor.value = webhookSuggest.url">自动填写本机地址</button><button class="btn ghost sm" type="button" :disabled="webhookCheck.checking" @click="checkWebhookUrl(webhookEditor.value)">{{ webhookCheck.checking ? '校验中…' : '校验地址' }}</button></div><p v-if="webhookCheck.msg" :class="['webhook-check-msg', webhookCheck.ok ? 'ok' : 'fail']">{{ webhookCheck.msg }}</p><div class="create-actions"><button class="btn" type="button" :disabled="connectionDraft.saving" @click="webhookEditor.visible = false">取消</button><button class="btn primary" type="submit" :disabled="connectionDraft.saving">{{ connectionDraft.saving ? '保存中…' : '确定' }}</button></div></form></div>
     <div v-if="featurePreviewUrl" class="fi-lightbox" @click="featurePreviewUrl = ''"><img :src="featurePreviewUrl" alt="功能介绍图预览" /></div>
     <div v-if="friendRangeDialog.visible" class="modal-root"><div class="modal-mask" @click="!friendRangeDialog.saving && (friendRangeDialog.visible = false)"></div><section class="modal friend-range-modal" role="dialog" aria-modal="true" aria-label="可添加范围"><button class="support-close" aria-label="关闭" @click="friendRangeDialog.visible = false"><AppIcon name="close" :size="16" /></button><div class="am-head"><h3>可添加范围</h3><p>选择允许添加机器人为好友的用户范围</p></div><div class="ai-body"><label v-for="item in [{ value: 'all', title: '所有人可添加' }, { value: 'friend', title: '仅 QQ 好友可添加' }]" :key="item.value" :class="['friend-range-option', { active: friendRangeDialog.value === item.value }]"><input v-model="friendRangeDialog.value" type="radio" :value="item.value" />{{ item.title }}</label></div><div class="am-foot"><button class="btn" :disabled="friendRangeDialog.saving" @click="friendRangeDialog.visible = false">取消</button><button class="btn primary" :disabled="friendRangeDialog.saving" @click="applyFriendRange">保存</button></div></section></div>
     <div v-if="showAdminGroups" class="modal-root"><div class="modal-mask" @click="showAdminGroups = false"></div><section class="modal group-admin-card__modal" role="dialog" aria-modal="true" aria-label="管理白名单群"><div class="group-admin-card__modal-head"><div><h3 class="group-admin-card__modal-title">管理白名单群</h3><p class="group-admin-card__modal-sub">为白名单群聊单独设置机器人管理能力</p></div><button class="group-admin-card__close" aria-label="关闭" @click="showAdminGroups = false"><AppIcon name="close" :size="16" /></button></div><div class="group-admin-card__modal-body"><div class="group-admin-card__whitelist-head"><span>已添加 {{ scope.adminGroups.length }} / 20 个群</span><button class="group-admin-card__add-button" :disabled="scope.adminGroups.length >= 20" @click="openGroupPicker('admin')"><AppIcon name="plus" :size="14" />添加群聊</button></div><div v-if="!scope.adminGroups.length" class="group-admin-card__whitelist-empty">暂无白名单群聊</div><div v-else class="group-admin-card__whitelist-list"><div v-for="group in scope.adminGroups" :key="group.id" class="group-admin-card__whitelist-item"><div class="group-admin-card__whitelist-info"><strong>{{ group.name }}</strong><small>{{ group.id }}</small></div><button class="group-admin-card__remove-button" @click="removeAdminGroup(group)">移除</button></div></div></div><div class="group-admin-card__modal-foot"><button class="btn" @click="showAdminGroups = false">关闭</button></div></section></div>
@@ -2318,32 +2554,15 @@ defineExpose({ reload: loadStatus })
       </div>
     </div>
 
-    <!-- 创建机器人弹窗 -->
-    <div v-if="showCreate" class="v2-qr-overlay" @click.self="showCreate = false">
-      <div class="create-modal">
-        <div class="v2-qr-title">创建机器人</div>
-        <div class="v2-qr-desc">个性化创建，灵活使用管理</div>
-        <label class="create-field">
-          <span>机器人头像</span>
-          <div class="avatar-options">
-            <button v-for="avatar in officialAvatars" :key="avatar.id" type="button" :class="['avatar-option', { active: createDraft.avatarId === avatar.id }]" @click="createDraft.avatarId = avatar.id">
-              <img :src="avatar.url" alt="" />
-            </button>
-          </div>
-        </label>
-        <label class="create-field">
-          <span>机器人昵称</span>
-          <input v-model="createDraft.name" maxlength="20" placeholder="请输入机器人昵称" />
-        </label>
-        <label class="create-field">
-          <span>机器人简介</span>
-          <textarea v-model="createDraft.desc" maxlength="100" rows="3" placeholder="请输入机器人简介"></textarea>
-        </label>
-        <div class="create-actions">
-          <button class="btn ghost" @click="showCreate = false">取消</button>
-          <button class="btn primary" :disabled="createLoading || !createDraft.name.trim() || !createDraft.avatarId" @click="submitCreate">{{ createLoading ? '创建中...' : '创建机器人' }}</button>
+    <div v-if="showDiscardCreate" class="modal-root">
+      <div class="modal-mask" @click="showDiscardCreate = false"></div>
+      <section class="modal form-modal" role="dialog" aria-modal="true" aria-labelledby="discard-create-title">
+        <div class="modal-header"><h3 id="discard-create-title">退出创建？</h3><p>已填写的信息尚未保存。</p></div>
+        <div class="modal-foot">
+          <button type="button" class="btn" @click="showDiscardCreate = false">继续填写</button>
+          <button type="button" class="btn primary" @click="closeCreate">退出创建</button>
         </div>
-      </div>
+      </section>
     </div>
 
     <!-- 编辑基础信息 -->
@@ -2427,26 +2646,6 @@ defineExpose({ reload: loadStatus })
       </div>
     </div>
 
-    <!-- 删除机器人 -->
-    <div v-if="revokeDialog.visible" class="v2-qr-overlay" @click.self="revokeDialog.visible = false">
-      <div class="form-modal delete-modal">
-        <div class="v2-qr-title">确认立即删除机器人</div>
-        <div class="delete-warning">当前机器人仅你在使用，确认删除后，将立即永久删除该账号，无法找回，请谨慎操作。</div>
-        <div class="delete-bot-card">
-          <div class="bot-avatar" :style="{ background: cur.avatar ? 'transparent' : cur.color }"><img v-if="cur.avatar" :src="cur.avatar" alt="" /><span v-else>{{ (cur.name || 'B').charAt(0) }}</span></div>
-          <div><b>{{ cur.name }}</b><span>AppID：{{ cur.appid }}</span></div>
-        </div>
-        <label class="create-field">
-          <span>请输入机器人 AppID</span>
-          <input v-model="revokeDialog.input" :placeholder="cur.appid" autocomplete="off" />
-        </label>
-        <div class="create-actions">
-          <button class="btn ghost" type="button" @click="revokeDialog.visible = false">取消</button>
-          <button class="btn danger" type="button" :disabled="revokeDialog.loading || revokeDialog.input.trim() !== cur.appid" @click="revokeCurrentBot">{{ revokeDialog.loading ? '处理中...' : '确认删除' }}</button>
-        </div>
-      </div>
-    </div>
-
     <!-- 添加 IP -->
     <div v-if="showAddIp" class="v2-qr-overlay" @click.self="showAddIp = false">
       <div class="form-modal compact-modal">
@@ -2516,23 +2715,25 @@ defineExpose({ reload: loadStatus })
       </div>
     </div>
 
-    <!-- 扫码登录弹窗 -->
+    <!-- 开放平台登录弹窗 -->
     <OpenAPILoginDialog
-      v-if="showQR"
-      :title="scanStatus === 'selecting' ? '选择登录主体' : '扫码登录 QQ 开放平台'"
-      :description="scanStatus === 'selecting' ? '请选择你要登录的开发者主体帐号' : '登录会话仅用于连接 QQ 机器人开放平台管理面板'"
+      v-if="showLogin"
+      :title="mobileLogin ? '在手机 QQ 中授权' : scanStatus === 'selecting' ? '选择登录主体' : '扫码登录 QQ 开放平台'"
+      :description="mobileLogin ? '在手机 QQ 中打开链接并确认授权。若当前使用电脑，可复制链接到手机打开。' : scanStatus === 'selecting' ? '请选择你要登录的开发者主体帐号' : '登录会话仅用于连接 QQ 机器人开放平台管理面板'"
       :steps="scanSteps"
-      :show-qr="scanStatus !== 'selecting'"
+      :show-qr="!mobileLogin && scanStatus !== 'selecting'"
       :qr-image="qrImg"
       :preparing="scanStatus === 'preparing'"
       :status-text="scanText"
       :status-tone="scanStatus === 'logged_in' ? 'success' : scanEnded ? 'error' : 'waiting'"
+      :open-url="activeMobileUrl"
+      open-label="打开手机 QQ"
       :actions="scanActions"
       @action="handleScanAction"
       @close="closeScan"
     >
       <template #body>
-        <div class="v2-entity-list">
+        <div v-if="scanStatus === 'selecting'" class="v2-entity-list">
           <label v-for="developer in scanDevelopers" :key="developer.id" :class="['v2-entity-item', { selected: selectedDeveloperId === developer.id }]">
             <input v-model="selectedDeveloperId" type="radio" :value="developer.id" />
             <span class="v2-entity-info">
@@ -2549,6 +2750,8 @@ defineExpose({ reload: loadStatus })
 </template>
 
 <style scoped>
+.data-details-toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+.data-details-toolbar h2 { margin: 0; font-size: 17px; }
 .v2-gate { max-width: 820px; margin: 36px auto 0; padding: 38px; border: 1px solid var(--line); border-radius: 26px; background: var(--bg-elev); box-shadow: var(--shadow); }
 .v2-gate-hero { display: flex; align-items: center; gap: 18px; }
 .v2-gate-icon { width: 62px; height: 62px; flex: none; display: grid; place-items: center; border-radius: 18px; background: linear-gradient(145deg, var(--accent), var(--accent-light)); color: #fff; box-shadow: 0 10px 24px color-mix(in srgb, var(--accent) 24%, transparent); }

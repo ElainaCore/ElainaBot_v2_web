@@ -1,8 +1,87 @@
-/* Embed the dashboard content inside the framework navigation. */
+/* QQ 机器人管理端在框架内的布局。 */
 .qqdash.qqdash { min-height: 100%; height: auto; font-size: 14px; line-height: normal; color-scheme: inherit; }
 .qqdash.qqdash .app-shell { display: block; min-height: 100%; }
+.qqdash[data-theme="light"] .platform-content { background: #f5f5f7; }
 .qqdash.qqdash .main { min-height: 100%; padding: 0; }
+.qqdash.qqdash .platform-content .page { max-width: 1240px; }
 .qqdash.qqdash .page-manage { padding-top: 36px; }
+.qqdash.qqdash .manage-body { gap: 20px; }
+.qqdash.qqdash .manage-nav,
+.qqdash.qqdash .manage-body .sec-group,
+.qqdash.qqdash .bot-card { box-shadow: none; }
+.qqdash.qqdash .manage-nav { background: var(--bg-elev); border-radius: 24px; backdrop-filter: none; }
+.qqdash.qqdash .manage-body .sec-group { border-radius: 24px; }
+.qqdash.qqdash .manage-nav .mn-item { font-weight: 500; }
+.qqdash.qqdash .manage-nav .mn-item:hover { transform: none; }
+.qqdash.qqdash .manage-nav .mn-item.active { background: var(--accent-soft); color: var(--accent); box-shadow: none; }
+.qqdash.qqdash .manage-body .row:hover { transform: none; }
+.qqdash.qqdash .bot-card { padding: 20px; border-radius: 24px; }
+.qqdash.qqdash .bot-card::after { display: none; }
+.qqdash.qqdash .bot-card:hover { transform: none; border-color: var(--accent-border); }
+.qqdash.qqdash .bot-card.banned-card { border-color: color-mix(in srgb, var(--danger) 24%, transparent); }
+.qqdash.qqdash .bot-card .bot-action { display: grid; place-items: center; padding: 4px; border: 0; border-radius: 8px; background: transparent; color: var(--ink-4); cursor: pointer; }
+.qqdash.qqdash .bot-card .bot-action:hover { background: var(--accent-soft); color: var(--accent); }
+.qqdash .bot-service-names { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qqdash .platform-bot-stats { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--line); color: var(--ink-3); font-size: 12px; }
+.qqdash .platform-bot-stats > span { display: inline-flex; align-items: center; gap: 5px; }
+.qqdash .platform-bot-stats b { color: var(--ink); font-variant-numeric: tabular-nums; }
+.qqdash.qqdash .bots-page-head { align-items: center; margin-bottom: 20px; }
+.qqdash .platform-list-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; margin-top: 8px; }
+.qqdash .platform-list-meta .limit-hint { padding-left: 12px; border-left: 1px solid var(--line); }
+.qqdash.qqdash .platform-list-meta .page-sub { margin: 0; }
+.qqdash .platform-account { position: relative; }
+.qqdash .platform-account summary { cursor: pointer; list-style: none; }
+.qqdash .platform-account summary::-webkit-details-marker { display: none; }
+.qqdash .platform-account summary img { width: 20px; height: 20px; border-radius: 50%; object-fit: cover; }
+.qqdash .platform-account-menu { position: absolute; top: calc(100% + 8px); right: 0; z-index: 5; display: grid; gap: 4px; min-width: 180px; padding: 6px; border: 1px solid var(--line); border-radius: 14px; background: var(--bg-elev); box-shadow: var(--shadow); }
+.qqdash .platform-account-info { display: grid; gap: 3px; padding: 7px 10px; color: var(--ink); }
+.qqdash .platform-account-info small { color: var(--ink-4); overflow-wrap: anywhere; }
+.qqdash .platform-empty { grid-column: 1 / -1; min-height: calc(100dvh - 250px); gap: 22px; padding: 32px 0 40px; }
+.qqdash .platform-empty-hero { width: min(396px, 100%); object-fit: contain; }
+.qqdash .platform-empty-features { width: min(428px, 100%); object-fit: contain; }
+.qqdash.qqdash .platform-create { padding: 32px 24px 48px; }
+.qqdash .platform-create-shell { max-width: 640px; margin-inline: auto; }
+.qqdash .platform-create-back { padding-left: 0; }
+.qqdash .platform-create-heading { margin: 20px 0 24px; }
+.qqdash .platform-create-heading h1 { margin: 0 0 8px; font-size: 26px; line-height: 1.4; }
+.qqdash .platform-create-heading p { margin: 0; color: var(--ink-3); font-size: 13px; line-height: 1.6; }
+.qqdash .platform-create-form { display: grid; gap: 24px; padding: 28px; border-radius: 24px; border: 1px solid var(--line); background: var(--bg-elev); }
+.qqdash .platform-create-avatar, .qqdash .platform-connect-bot { display: flex; align-items: center; gap: 14px; }
+.qqdash .platform-create-avatar { gap: 20px; padding-bottom: 24px; border-bottom: 1px solid var(--line); }
+.qqdash .platform-create-avatar > img, .qqdash .platform-create-avatar > span { width: 72px; height: 72px; flex: none; border-radius: 50%; object-fit: cover; }
+.qqdash .platform-create-avatar > span, .qqdash .platform-connect-avatar { display: grid; place-items: center; color: var(--ink-4); background: var(--bg-sunken); }
+.qqdash .platform-create-avatar h2 { margin: 0 0 4px; font-size: 14px; }
+.qqdash .platform-create-avatar p { margin: 0; font-size: 13px; line-height: 1.6; color: var(--ink-3); }
+.qqdash .platform-create-avatar .btn { margin-top: 12px; }
+.qqdash .platform-create-field { display: grid; gap: 8px; }
+.qqdash .platform-create-field > span { font-weight: 650; }
+.qqdash .platform-create-field em { color: var(--danger); font-style: normal; }
+.qqdash .platform-create-field small, .qqdash .platform-create-footer p { font-size: 12px; color: var(--ink-4); font-weight: 400; }
+.qqdash .platform-create-input { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border: 1px solid var(--line); background: var(--bg-sunken); border-radius: 11px; }
+.qqdash .platform-create-input:focus-within { border-color: var(--accent); }
+.qqdash .platform-create-input.is-textarea { align-items: flex-end; }
+.qqdash .platform-create-input input, .qqdash .platform-create-input textarea { width: 100%; min-width: 0; border: 0; outline: none; background: none; color: var(--ink); font-size: 14px; }
+.qqdash .platform-create-input textarea { resize: vertical; }
+.qqdash .platform-create-input small { flex: none; }
+.qqdash .platform-create-footer { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; padding-top: 20px; border-top: 1px solid var(--line); }
+.qqdash .platform-create-footer p { margin: 0; }
+.qqdash .platform-create-footer > div { display: flex; gap: 8px; margin-left: auto; }
+.qqdash.qqdash .platform-content .platform-connect { max-width: 1120px; }
+.qqdash .platform-connect-head .page-head-main { flex: 1 1 28rem; }
+.qqdash .platform-connect-bot { width: fit-content; flex-wrap: wrap; gap: 10px; margin-top: 12px; padding: 8px 12px 8px 8px; border: 1px solid var(--line); border-radius: 14px; background: var(--bg-elev); }
+.qqdash .platform-connect-bot > img, .qqdash .platform-connect-avatar { width: 42px; height: 42px; border-radius: 50%; object-fit: cover; flex: none; }
+.qqdash .platform-connect-bot b, .qqdash .platform-connect-bot small { display: block; }
+.qqdash .platform-connect-bot small { margin-top: 5px; color: var(--ink-3); }
+.qqdash .platform-connect-description { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 8px; }
+.qqdash.qqdash .platform-connect-description .page-sub { flex: 1 1 24rem; margin: 0; }
+.qqdash .platform-notify-anchor { position: relative; }
+.qqdash .platform-notify-dismiss { position: fixed; inset: 0; z-index: 19; border: 0; background: transparent; cursor: default; }
+.qqdash .platform-notify-popover { position: absolute; top: calc(100% + 8px); right: 0; z-index: 20; width: min(400px, calc(100vw - 36px)); }
+.qqdash .platform-notify-popover .notify-center { margin: 0; box-shadow: var(--shadow-lg); }
+.qqdash .platform-notify-popover .notify-center-body { max-height: min(60dvh, 480px); overflow: auto; }
+.qqdash .fi-version-tabs { display: flex; gap: 4px; margin: 0 0 14px; padding: 3px; width: fit-content; border-radius: 9px; background: var(--bg-sunken); }
+.qqdash .fi-version-tabs button { padding: 6px 12px; border: 0; border-radius: 7px; background: transparent; color: var(--ink-3); font-size: 12px; cursor: pointer; }
+.qqdash .fi-version-tabs button.active { background: var(--op-surface, var(--bg-elev)); color: var(--ink); box-shadow: var(--shadow-sm); }
 .qqdash .manage-body, .qqdash .manage-nav, .qqdash .switch-service-panel,
 .qqdash .connect-grid, .qqdash .guide-card, .qqdash .guide-pane { min-width: 0; }
 .qqdash .guide-tabs { max-width: 100%; overflow-x: auto; }
@@ -61,12 +140,22 @@
 .qqdash .modal-root ~ .modal-root { z-index: 1201; }
 .qqdash .v2-qr-overlay { z-index: 1300; padding: 16px; backdrop-filter: blur(4px); }
 .qqdash .v2-qr-overlay > div { max-height: calc(100vh - 32px); overflow-y: auto; }
+@media (max-width: 1320px) {
+  .qqdash.qqdash .platform-content .manage-layout { grid-template-columns: minmax(0, 1fr); }
+  .qqdash.qqdash .platform-content .manage-nav { flex-direction: row; position: static; overflow-x: auto; }
+  .qqdash.qqdash .platform-content .manage-nav .mn-item { width: auto; flex: 1 0 auto; white-space: nowrap; }
+  .qqdash .manage-nav .mn-skeleton { width: 96px; flex: none; }
+}
 @media (max-width: 1000px) {
   .qqdash.qqdash .page { padding-left: 24px; padding-right: 24px; }
-  .qqdash.qqdash .manage-layout { grid-template-columns: 190px minmax(0, 1fr); gap: 18px; }
+  .qqdash.qqdash .manage-layout { gap: 18px; }
   .qqdash .page-title-row { flex-wrap: wrap; }
 }
 @media (max-width: 720px) {
+  .qqdash.qqdash .platform-create { padding: 16px; }
+  .qqdash .platform-create-form { padding: 20px; }
+  .qqdash .platform-create-heading h1 { font-size: 22px; }
+  .qqdash .platform-list-meta .limit-hint { padding-left: 0; border-left: 0; }
   .qqdash.qqdash .page { padding: 24px 16px 40px; }
   .qqdash.qqdash .manage-layout { grid-template-columns: minmax(0, 1fr); }
   .qqdash.qqdash .manage-nav { flex-direction: row; position: static; overflow: auto; border-radius: 16px; gap: 4px; padding: 6px; }

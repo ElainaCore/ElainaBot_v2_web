@@ -8,6 +8,7 @@ const permissions = [
   { id: 101, title: '进群管理', apis: [['入群申请列表拉取', 'GET', '/v2/groups/{group_openid}/join_request_list', 'v2_groups_group_openid_join_request_list.get.html'], ['入群申请审批', 'POST', '/v2/groups/{group_openid}/approval_join_request/{member_openid}', 'v2_groups_group_openid_approval_join_request_member_openid.post.html'], ['执行入群自动审批策略', 'POST', '/v2/groups/join_approval_strategy/{strategy_id}/execute', 'v2_groups_join_approval_strategy_strategy_id_execute.post.html']] },
   { id: 201, title: '发言管理', apis: [['查询群禁言状态', 'GET', '/v2/groups/{group_openid}/restrict_chat_setting', 'v2_groups_group_openid_restrict_chat_setting.get.html'], ['设置群成员禁言', 'POST', '/v2/groups/{group_openid}/restrict_chat_setting', 'v2_groups_group_openid_restrict_chat_setting.post.html']] },
   { id: 102, title: '移除群成员', apis: [['群成员批量移除', 'POST', '/v2/groups/{group_openid}/batch_remove_members', 'v2_groups_group_openid_batch_remove_members.post.html']] },
+  { id: 203, title: '@全体成员', apis: [] },
 ]
 const modal = reactive({ visible: false, scope: 'all', switches: {}, expanded: [] })
 const saving = ref(false)

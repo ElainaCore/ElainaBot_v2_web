@@ -12,6 +12,7 @@ defineProps({
   statusText: { type: String, required: true },
   statusTone: { type: String, default: 'waiting' },
   openUrl: { type: String, default: '' },
+  openLabel: { type: String, default: '打开登录页面' },
   actions: { type: Array, default: () => [] },
 })
 
@@ -34,7 +35,7 @@ const emit = defineEmits(['action', 'close'])
       <slot v-else name="body" />
       <div :class="['login-dialog-status', statusTone]">{{ statusText }}</div>
       <div class="login-dialog-actions">
-        <a v-if="openUrl" :href="openUrl" target="_blank" rel="noopener" class="login-dialog-action ghost">打开登录页面</a>
+        <a v-if="openUrl" :href="openUrl" target="_blank" rel="noopener noreferrer" class="login-dialog-action primary">{{ openLabel }}</a>
         <button
           v-for="action in actions"
           :key="action.key"
@@ -82,7 +83,8 @@ const emit = defineEmits(['action', 'close'])
 }
 .login-dialog-progress {
   display:grid;
-  grid-template-columns:repeat(4, 1fr);
+  grid-auto-flow:column;
+  grid-auto-columns:minmax(0, 1fr);
   margin:0 0 18px
 }
 .login-dialog-progress span {

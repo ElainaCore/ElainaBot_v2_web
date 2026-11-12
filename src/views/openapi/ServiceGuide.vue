@@ -2,7 +2,7 @@
 import { ref, computed } from 'vue'
 import guides from './service-guides'
 import AppIcon from './AppIcon.vue'
-const props = defineProps({ appid: String, secret: String })
+const props = defineProps({ appid: String, secret: String, showBreadcrumb: { type: Boolean, default: true } })
 const emit = defineEmits(['back', 'reset-secret', 'toast'])
 const active = ref('WorkBuddy')
 const manual = ref(false)
@@ -14,7 +14,7 @@ async function copy(value) {
 </script>
 <template>
   <div class="switch-service-panel">
-    <nav class="breadcrumb-bar" aria-label="面包屑导航"><button class="breadcrumb-parent" aria-label="返回高级设置" @click="emit('back')"><AppIcon name="back" :size="14" />高级设置</button><span class="breadcrumb-sep">/</span><span class="breadcrumb-current">设置机器人服务</span></nav>
+    <nav v-if="showBreadcrumb" class="breadcrumb-bar" aria-label="面包屑导航"><button class="breadcrumb-parent" aria-label="返回高级设置" @click="emit('back')"><AppIcon name="back" :size="14" />高级设置</button><span class="breadcrumb-sep">/</span><span class="breadcrumb-current">设置机器人服务</span></nav>
     <div class="connect-grid"><div class="guide-card"><div class="guide-title">推荐连接指引（不仅限连接使用以下 Agent 服务，可自行查阅更多网络教程）</div>
       <div class="guide-tabs" role="tablist"><button v-for="guide in guides" :key="guide.name" :class="['guide-tab', { active: active === guide.name }]" role="tab" :aria-selected="active === guide.name" @click="active = guide.name"><img class="guide-tab-icon" :src="guide.icon" alt="" /><span class="guide-tab-label">{{ guide.name }}</span></button></div>
       <div class="guide-pane"><div class="guide-shell"><div class="guide-overview"><div class="guide-overview-copy"><div class="guide-overview-kicker">服务接入</div><h3 class="guide-overview-title">{{ config.name }}</h3><p class="guide-summary">{{ config.description }}</p></div><div class="guide-links"><a v-for="link in config.links" :key="link.url" class="guide-link" :href="link.url" target="_blank" rel="noopener noreferrer"><AppIcon class="guide-link-icon" name="external" :size="15" />{{ link.label }}</a></div></div>
